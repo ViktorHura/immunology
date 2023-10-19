@@ -13,6 +13,7 @@ class TCRContrastiveDataset(Dataset):
         self.max_sequence_length = max_sequence_length
         self.pairs = []
         self.encoding_dict = {}
+        self.epitopes = []
         self.generatePairs(data_path)
         self.tensor_size = (self.aa_keys.shape[1], 1, max_sequence_length)
 
@@ -27,7 +28,9 @@ class TCRContrastiveDataset(Dataset):
     def generatePairs(self, data_path):
         for f in os.listdir(data_path):
             data = pd.read_csv(data_path + f, sep='\t')
-            #data = data.filter(['Label', 'TRA_CDR3', 'TRB_CDR3'])
+            epitope = f[:-4]
+            self.epitopes.append(epitope)
+            id = len(self.epitopes)-1
 
             positives_seqs = data[data['Label'] == 1]
             positives_seqs = positives_seqs['TRB_CDR3'].tolist()
@@ -42,16 +45,16 @@ class TCRContrastiveDataset(Dataset):
                 self.encoding_dict[s] = self.encodeSequence(s)
 
             for a, b in itertools.combinations(positives_seqs, 2):
-                self.pairs.append((a, b, 1))
+                self.pairs.append((a, b, 1, id))
 
             for a, b in itertools.product(positives_seqs, negative_seqs):
-                self.pairs.append((a, b, 0))
+                self.pairs.append((a, b, 0, id))
 
     def __len__(self):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        s1, s2, label = self.pairs[idx]
+        s1, s2, label, _ = self.pairs[idx]
 
         return self.encoding_dict[s1], self.encoding_dict[s2], label
 
