@@ -32,7 +32,6 @@ def plot_losses(epochs, losses):
     x = np.array(range(epochs))
     y = np.array(losses)
 
-    plt.xticks(x)
     plt.plot(x, y)
 
     plt.title("Training loss")
@@ -43,8 +42,9 @@ def plot_losses(epochs, losses):
 
 def main():
     config = {
-        "BatchSize": 128,
-        "Epochs": 20
+        "BatchSize": 4096,
+        "Epochs": 200,
+	"LR":0.0001
     }
 
     training_data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
@@ -57,7 +57,7 @@ def main():
 
     net = SiameseNetwork(input_size).to(device)
     criterion = ContrastiveLoss()
-    optimizer = torch.optim.Adam(net.parameters())
+    optimizer = torch.optim.Adam(net.parameters(), lr=config['LR'])
 
     model, losses = train(config['Epochs'], training_loader, net, criterion, optimizer, device)
     torch.save(model.state_dict(), '../output/contrastiveModel/model_final.pt')

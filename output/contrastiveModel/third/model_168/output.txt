@@ -1,0 +1,9 @@
+best f1 score of
+	0.9617208951898937
+	with a threshold of 0.1275678426027298
+	with recall of 0.991740230241082
+	with precision of 0.9334654985593018
+== confusion matrix ==
+dissimilar / similar
+[[192109   1601]
+ [ 13693   5528]]

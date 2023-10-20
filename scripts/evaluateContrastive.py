@@ -41,7 +41,7 @@ def plot_histograms(distances, sim, dissim, n_bins, title="Distance distribution
     fig.suptitle(title)
     axs[0].set_ylabel("Positive pair")
     axs[1].set_ylabel("Negative pair")
-    plt.xticks(np.arange(distances.min(), distances.max(), 0.1))
+    plt.xticks(np.arange(distances.min(), distances.max(), 0.5))
     plt.xlabel("Distance")
 
 
@@ -64,7 +64,7 @@ def plot_class_histograms(dataset, distances, n_bins, output_dir):
 
 
 def main():
-    model_name = "model_11.pt"
+    model_name = "model_168.pt"
     output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
     logger = setupLogger(output_dir+"output.txt")
 
