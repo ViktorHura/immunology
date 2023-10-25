@@ -4,10 +4,11 @@ import logging
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
-from sklearn.metrics import precision_recall_curve, f1_score,\
-    confusion_matrix
+from sklearn.metrics import precision_recall_curve, confusion_matrix
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
+from scipy.stats import ks_2samp
 import matplotlib.pyplot as plt
+import math
 
 from modelContrastive import SiameseNetwork
 from data_preprocessing import TCRContrastiveDataset
@@ -22,7 +23,7 @@ def setupLogger(path):
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fh = logging.FileHandler(path, mode="w")
-    fh.setLevel(logging.INFO)  # or any level you want
+    fh.setLevel(logging.INFO)
     logger.addHandler(fh)
     return logger
 
@@ -45,15 +46,18 @@ def plot_histograms(distances, sim, dissim, n_bins, title="Distance distribution
     plt.xlabel("Distance")
 
 
-def plot_class_histograms(dataset, distances, n_bins, output_dir):
+def seperateDataByEpitope(dataset, distances):
     dist_dict = {}
     for epitope in dataset.epitopes:
-        dist_dict[epitope] = ([], [])   # negative and positive pair distances
+        dist_dict[epitope] = ([], [])  # negative and positive pair distances
 
     for i, p in enumerate(dataset.pairs):
         _, _, typ, epitope_id = p
         dist_dict[dataset.epitopes[epitope_id]][typ].append(distances[i])
+    return dist_dict
 
+
+def plot_class_histograms(dataset, dist_dict, n_bins, output_dir, distances):
     for epitope in dataset.epitopes:
         pdist = dist_dict[epitope][1]
         ndist = dist_dict[epitope][0]
@@ -65,7 +69,7 @@ def plot_class_histograms(dataset, distances, n_bins, output_dir):
 
 def main():
     model_name = "model_168.pt"
-    output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
+    output_dir = f"../output/contrastiveModel/third/{model_name[:-3]}/"
     logger = setupLogger(output_dir+"output.txt")
 
     test_data = TCRContrastiveDataset.load('../output/test_dataset_contrastive.pickle')
@@ -74,7 +78,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = SiameseNetwork(test_data.tensor_size).to(device)
-    model.load_state_dict(torch.load('../output/contrastiveModel/'+model_name))
+    model.load_state_dict(torch.load('../output/contrastiveModel/third/'+model_name))
     model.eval()
 
     labels = []
@@ -111,14 +115,32 @@ def main():
     logger.info("dissimilar / similar")
     logger.info(conf)
 
+
     similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
     dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
+
+    resKS = ks_2samp(data1=similar_dists, data2=dissim_dists, alternative='two-sided', method='exact')
+    logger.info('\n== Kolmogorov Smirnov p-values ==')
+    logger.info(f'{"All":10} : {-math.log(resKS.pvalue)}')
+
+    dist_dict = seperateDataByEpitope(test_data, distances)
+    avg_score = 0
+    for epitope in test_data.epitopes:
+        pdist = dist_dict[epitope][1]
+        ndist = dist_dict[epitope][0]
+        resKS = ks_2samp(data1=pdist, data2=ndist, alternative='two-sided', method='exact')
+        score = -math.log(resKS.pvalue)
+        avg_score += score
+        logger.info(f'{epitope:10} : {score}')
+    avg_score /= len(test_data.epitopes)
+    logger.info(f'{"Average":10} : {avg_score}')
+
 
     plot_histograms(np.array(distances), similar_dists, dissim_dists, 100)
     plt.savefig(output_dir + "ALL_dist.png")
     plt.show()
 
-    plot_class_histograms(test_data, distances, 100, output_dir)
+    plot_class_histograms(test_data, dist_dict, 100, output_dir, distances)
 
 
 if __name__ == "__main__":
