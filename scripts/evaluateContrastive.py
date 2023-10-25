@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from sklearn.metrics import precision_recall_curve, confusion_matrix
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
-from scipy.stats import ks_2samp
+from scipy.stats import wasserstein_distance
 import matplotlib.pyplot as plt
 import math
 
@@ -119,17 +119,16 @@ def main():
     similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
     dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
 
-    resKS = ks_2samp(data1=similar_dists, data2=dissim_dists, alternative='two-sided', method='exact')
-    logger.info('\n== Kolmogorov Smirnov p-values ==')
-    logger.info(f'{"All":10} : {-math.log(resKS.pvalue)}')
+    resWD = wasserstein_distance(similar_dists,dissim_dists)
+    logger.info('\n== Wasserstein distances ==')
+    logger.info(f'{"All":10} : {resWD}')
 
     dist_dict = seperateDataByEpitope(test_data, distances)
     avg_score = 0
     for epitope in test_data.epitopes:
         pdist = dist_dict[epitope][1]
         ndist = dist_dict[epitope][0]
-        resKS = ks_2samp(data1=pdist, data2=ndist, alternative='two-sided', method='exact')
-        score = -math.log(resKS.pvalue)
+        score = wasserstein_distance(pdist, ndist)
         avg_score += score
         logger.info(f'{epitope:10} : {score}')
     avg_score /= len(test_data.epitopes)
