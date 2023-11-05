@@ -2,10 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class SiameseNetwork(nn.Module):
+class ImRexBackbone(nn.Module):
     def __init__(self, input_shape):
-        super(SiameseNetwork, self).__init__()
-        # Setting up CNN Layers
+        super(ImRexBackbone, self).__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(input_shape[0], 128, (1, 3), padding="same"),
             nn.ReLU(inplace=True),
@@ -32,11 +31,23 @@ class SiameseNetwork(nn.Module):
             nn.ReLU(inplace=True),
         )
 
+    def forward(self, input):
+        return self.cnn(input)
+
+
+class SiameseNetwork(nn.Module):
+    def __init__(self, input_shape, backbone=None):
+        super(SiameseNetwork, self).__init__()
+        if backbone is None:
+            backbone = ImRexBackbone(input_shape)
+        # Setting up CNN Layers
+        self.backbone = backbone
+
     def forward(self, input1, input2):
         # forward pass of input 1
-        output1 = self.cnn(input1)
+        output1 = self.backbone(input1)
         # forward pass of input 2
-        output2 = self.cnn(input2)
+        output2 = self.backbone(input2)
 
         return output1, output2
 

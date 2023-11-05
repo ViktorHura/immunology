@@ -1,8 +1,9 @@
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import torch.nn.functional as F
 
 from modelContrastive import SiameseNetwork, ContrastiveLoss
 from data_preprocessing import TCRContrastiveDataset
@@ -43,12 +44,16 @@ def plot_losses(epochs, losses):
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 200,
+        "Epochs": 1,
 	    "LR":0.0001
     }
 
-    training_data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
-    input_size = training_data.tensor_size
+    data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
+    input_size = data.tensor_size
+
+    validation_data = Subset(data, data.validation_indices)
+    training_data = Subset(data, [i for i in range(len(data)) if i not in data.validation_indices])
+
 
     #training_data = torch.utils.data.Subset(training_data, range(1024))
     training_loader = DataLoader(training_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
@@ -73,6 +78,21 @@ def main():
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/contrastiveModel/loss.png')
     plt.show()
+
+    test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
+    model.eval()
+
+    labels = []
+    distances = []
+    with torch.no_grad():
+        for i, data in enumerate(test_loader, 0):
+            seqA, seqB, label = data
+            outputA, outputB = model(seqA.to(device=device, dtype=torch.float),
+                                     seqB.to(device=device, dtype=torch.float))
+
+            dist = F.pairwise_distance(outputA, outputB)
+            labels += label.tolist()
+            distances += dist.tolist()
 
 
 if __name__ == "__main__":
