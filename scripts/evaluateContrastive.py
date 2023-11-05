@@ -8,7 +8,6 @@ from sklearn.metrics import precision_recall_curve, confusion_matrix
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
 from scipy.stats import wasserstein_distance
 import matplotlib.pyplot as plt
-import math
 
 from modelContrastive import SiameseNetwork
 from data_preprocessing import TCRContrastiveDataset
@@ -46,14 +45,14 @@ def plot_histograms(distances, sim, dissim, n_bins, title="Distance distribution
     plt.xlabel("Distance")
 
 
-def seperateDataByEpitope(dataset, distances):
+def seperateDataByEpitope(dataset, epitopes, distances):
     dist_dict = {}
-    for epitope in dataset.epitopes:
+    for epitope in epitopes:
         dist_dict[epitope] = ([], [])  # negative and positive pair distances
 
-    for i, p in enumerate(dataset.pairs):
+    for i, p in enumerate(dataset):
         _, _, typ, epitope_id = p
-        dist_dict[dataset.epitopes[epitope_id]][typ].append(distances[i])
+        dist_dict[epitopes[epitope_id]][typ].append(distances[i])
     return dist_dict
 
 
@@ -65,6 +64,21 @@ def plot_class_histograms(dataset, dist_dict, n_bins, output_dir, distances):
         plot_histograms(np.array(distances), pdist, ndist, n_bins, f"Distance distributions {epitope}")
         plt.savefig(output_dir + f"{epitope}_dist.png")
         plt.show()
+
+
+def evaluate_model(test_loader, model, device):
+    labels = []
+    distances = []
+    with torch.no_grad():
+        for i, data in enumerate(test_loader, 0):
+            seqA, seqB, label, _ = data
+            outputA, outputB = model(seqA.to(device=device, dtype=torch.float),
+                                     seqB.to(device=device, dtype=torch.float))
+
+            dist = F.pairwise_distance(outputA, outputB)
+            labels += label.tolist()
+            distances += dist.tolist()
+    return labels, distances
 
 
 def main():
@@ -81,16 +95,7 @@ def main():
     model.load_state_dict(torch.load('../output/contrastiveModel/third/'+model_name))
     model.eval()
 
-    labels = []
-    distances = []
-    with torch.no_grad():
-        for i, data in enumerate(test_loader, 0):
-            seqA, seqB, label = data
-            outputA, outputB = model(seqA.to(device=device, dtype=torch.float), seqB.to(device=device, dtype=torch.float))
-
-            dist = F.pairwise_distance(outputA, outputB)
-            labels += label.tolist()
-            distances += dist.tolist()
+    labels, distances = evaluate_model(test_loader, model, device)
 
     RocCurveDisplay.from_predictions(labels, distances, pos_label=0)
     plt.plot([0, 1], [0, 1], linestyle='--')
@@ -123,7 +128,7 @@ def main():
     logger.info('\n== Wasserstein distances ==')
     logger.info(f'{"All":10} : {resWD}')
 
-    dist_dict = seperateDataByEpitope(test_data, distances)
+    dist_dict = seperateDataByEpitope(test_data, test_data.epitopes, distances)
     avg_score = 0
     for epitope in test_data.epitopes:
         pdist = dist_dict[epitope][1]

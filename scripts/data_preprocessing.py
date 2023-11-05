@@ -68,9 +68,9 @@ class TCRContrastiveDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        s1, s2, label, _ = self.pairs[idx]
+        s1, s2, label, typ = self.pairs[idx]
 
-        return self.encoding_dict[s1], self.encoding_dict[s2], label
+        return self.encoding_dict[s1], self.encoding_dict[s2], label, typ
 
     def save(self, path):
         with open(path, 'wb') as handle:

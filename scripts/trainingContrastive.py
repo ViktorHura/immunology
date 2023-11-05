@@ -3,7 +3,8 @@ from torch.utils.data import DataLoader, Subset
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-import torch.nn.functional as F
+from evaluateContrastive import evaluate_model, seperateDataByEpitope
+from scipy.stats import wasserstein_distance
 
 from modelContrastive import SiameseNetwork, ContrastiveLoss
 from data_preprocessing import TCRContrastiveDataset
@@ -14,7 +15,7 @@ def train(epochs, dataloader, net, criterion, optimizer, device):
 
     for epoch in range(epochs):
         for i, data in enumerate(dataloader, 0):
-            seq0, seq1, label = data
+            seq0, seq1, label, _ = data
             seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float), label.to(device=device)
             optimizer.zero_grad()
             output1, output2 = net(seq0, seq1)
@@ -44,15 +45,15 @@ def plot_losses(epochs, losses):
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 1,
-	    "LR":0.0001
+        "Epochs": 2,
+	    "LR":0.001
     }
 
     data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
     input_size = data.tensor_size
 
     validation_data = Subset(data, data.validation_indices)
-    training_data = Subset(data, [i for i in range(len(data)) if i not in data.validation_indices])
+    training_data = Subset(data, np.setdiff1d(np.arange(len(data)), data.validation_indices))
 
 
     #training_data = torch.utils.data.Subset(training_data, range(1024))
@@ -67,13 +68,7 @@ def main():
     model, losses = train(config['Epochs'], training_loader, net, criterion, optimizer, device)
     torch.save(model.state_dict(), '../output/contrastiveModel/model_final.pt')
 
-    print(losses)
-
-    with open('../output/contrastiveModel/results.json', 'w') as handle:
-        json.dump({
-            "config": config,
-            "losses": losses
-        }, handle, indent=4)
+    #print(losses)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/contrastiveModel/loss.png')
@@ -82,17 +77,38 @@ def main():
     test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
     model.eval()
 
-    labels = []
-    distances = []
-    with torch.no_grad():
-        for i, data in enumerate(test_loader, 0):
-            seqA, seqB, label = data
-            outputA, outputB = model(seqA.to(device=device, dtype=torch.float),
-                                     seqB.to(device=device, dtype=torch.float))
+    labels, distances = evaluate_model(test_loader, model, device)
 
-            dist = F.pairwise_distance(outputA, outputB)
-            labels += label.tolist()
-            distances += dist.tolist()
+    similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
+    dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
+
+    resWD = wasserstein_distance(similar_dists, dissim_dists)
+    print('\n== Wasserstein distances ==')
+    print(f'{"All":10} : {resWD}')
+
+    evaluation_results = {
+        "all": resWD
+    }
+
+    dist_dict = seperateDataByEpitope(validation_data, data.epitopes, distances)
+    avg_score = 0
+    for epitope in data.epitopes:
+        pdist = dist_dict[epitope][1]
+        ndist = dist_dict[epitope][0]
+        score = wasserstein_distance(pdist, ndist)
+        evaluation_results[epitope] = score
+        avg_score += score
+        print(f'{epitope:10} : {score}')
+    avg_score /= len(data.epitopes)
+    evaluation_results["avg"] = avg_score
+    print(f'{"Average":10} : {avg_score}')
+
+    with open('../output/contrastiveModel/results.json', 'w') as handle:
+        json.dump({
+            "config": config,
+            "losses": losses,
+            "evaluation_results": evaluation_results
+        }, handle, indent=4)
 
 
 if __name__ == "__main__":
