@@ -1,17 +1,19 @@
-import copy
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from modelContrastive import ImRexBackbone
 
 
 class SiameseNetworkBYOL(nn.Module):
-    def __init__(self, input_shape, backbone=None, pred_dim=32, dim=256, m=0.996):
+    def __init__(self, input_shape, backbone_q=None, backbone_k=None, pred_dim=32, dim=256, m=0.996):
         super(SiameseNetworkBYOL, self).__init__()
-        if backbone is None:
-            backbone = ImRexBackbone(input_shape)
+        if backbone_q is None:
+            backbone_q = ImRexBackbone(input_shape)
+        if backbone_k is None:
+            backbone_k = ImRexBackbone(input_shape)
         # Setting up CNN Layers
-        self.encoder_q = backbone
-        self.encoder_k = copy.deepcopy(backbone)
+        self.encoder_q = backbone_q
+        self.encoder_k = backbone_k
         self.m = m
 
         self.predictor = nn.Sequential(nn.Linear(pred_dim, dim),
@@ -38,4 +40,27 @@ class SiameseNetworkBYOL(nn.Module):
         p2 = self.predictor(self.encoder_q(input2))  # NxC
         z1 = self.encoder_k(input1)  # NxC
 
-        return p1, p2, z1.detach(), z2.detach()
+        return p1, z2.detach(), p2, z1.detach()
+
+
+class BYOLLoss(nn.Module):
+    """
+    Contrastive loss
+    Takes embeddings of two samples and a target label == 1 if samples are from the same class and label == 0 otherwise
+    https://github.com/adambielski/siamese-triplet/blob/master/losses.py
+    """
+
+    def __init__(self):
+        super(BYOLLoss, self).__init__()
+
+    def forward(self, p1, z2, p2, z1):
+        x1 = F.normalize(p1, dim=-1, p=2)
+        y1 = F.normalize(z2, dim=-1, p=2)
+        loss1 = 2 - 2 * (x1 * y1).sum(dim=-1)
+
+        x2 = F.normalize(p2, dim=-1, p=2)
+        y2 = F.normalize(z1, dim=-1, p=2)
+        loss2 = 2 - 2 * (x2 * y2).sum(dim=-1)
+
+        loss = loss1 + loss2
+        return loss.mean()
