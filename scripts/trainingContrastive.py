@@ -3,18 +3,21 @@ from torch.utils.data import DataLoader, Subset
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-from evaluateContrastive import evaluate_model, seperateDataByEpitope
+from evaluateContrastive import evaluate_model
 from scipy.stats import wasserstein_distance
 
 from modelContrastive import SiameseNetwork, ContrastiveLoss
 from data_preprocessing import TCRContrastiveDataset
 
 
-def train(epochs, dataloader, net, criterion, optimizer, device):
+def train(epochs, training_loader, validation_loader, net, criterion, optimizer, device):
     loss = []
+    eval_scores = []
 
     for epoch in range(epochs):
-        for i, data in enumerate(dataloader, 0):
+        net.train()
+        print(f"Epoch {epoch}")
+        for i, data in enumerate(training_loader, 0):
             seq0, seq1, label, _ = data
             seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float), label.to(device=device)
             optimizer.zero_grad()
@@ -23,30 +26,42 @@ def train(epochs, dataloader, net, criterion, optimizer, device):
             loss_contrastive.backward()
             optimizer.step()
 
-        print("Epoch {}\n Current loss {}\n".format(epoch, loss_contrastive.item()))
-        loss.append(loss_contrastive.item())
+        print(f"Current loss {loss_contrastive.item()}")
         torch.save(net.state_dict(), f'../output/contrastiveModel/model_{epoch}.pt')
 
-    return net, loss
+        net.eval()
+
+        labels, distances = evaluate_model(validation_loader, net, device)
+
+        similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
+        dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
+
+        evalscore = wasserstein_distance(similar_dists, dissim_dists)
+
+        print(f"Current eval score {evalscore}\n")
+
+        eval_scores.append(evalscore)
+        loss.append(loss_contrastive.item())
+
+    return net, loss, eval_scores
 
 
-def plot_losses(epochs, losses):
+def plot_losses(epochs, losses, title="Training loss", xtitle="loss", ytitle="epoch"):
     x = np.array(range(epochs))
     y = np.array(losses)
 
     plt.plot(x, y)
 
-    plt.title("Training loss")
-
-    plt.ylabel("loss")
-    plt.xlabel("epoch")
+    plt.title(title)
+    plt.ylabel(ytitle)
+    plt.xlabel(xtitle)
 
 
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 2,
-	    "LR":0.001
+        "Epochs": 24,
+	    "LR":0.01
     }
 
     data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
@@ -55,9 +70,8 @@ def main():
     validation_data = Subset(data, data.validation_indices)
     training_data = Subset(data, np.setdiff1d(np.arange(len(data)), data.validation_indices))
 
-
-    #training_data = torch.utils.data.Subset(training_data, range(1024))
     training_loader = DataLoader(training_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
+    test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -65,49 +79,21 @@ def main():
     criterion = ContrastiveLoss()
     optimizer = torch.optim.Adam(net.parameters(), lr=config['LR'])
 
-    model, losses = train(config['Epochs'], training_loader, net, criterion, optimizer, device)
-    torch.save(model.state_dict(), '../output/contrastiveModel/model_final.pt')
-
-    #print(losses)
+    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer, device)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/contrastiveModel/loss.png')
     plt.show()
 
-    test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
-    model.eval()
-
-    labels, distances = evaluate_model(test_loader, model, device)
-
-    similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
-    dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
-
-    resWD = wasserstein_distance(similar_dists, dissim_dists)
-    print('\n== Wasserstein distances ==')
-    print(f'{"All":10} : {resWD}')
-
-    evaluation_results = {
-        "all": resWD
-    }
-
-    dist_dict = seperateDataByEpitope(validation_data, data.epitopes, distances)
-    avg_score = 0
-    for epitope in data.epitopes:
-        pdist = dist_dict[epitope][1]
-        ndist = dist_dict[epitope][0]
-        score = wasserstein_distance(pdist, ndist)
-        evaluation_results[epitope] = score
-        avg_score += score
-        print(f'{epitope:10} : {score}')
-    avg_score /= len(data.epitopes)
-    evaluation_results["avg"] = avg_score
-    print(f'{"Average":10} : {avg_score}')
+    plot_losses(config['Epochs'], eval_scores, title="Evaluation Scores", ytitle="EM distance")
+    plt.savefig('../output/contrastiveModel/eval.png')
+    plt.show()
 
     with open('../output/contrastiveModel/results.json', 'w') as handle:
         json.dump({
             "config": config,
             "losses": losses,
-            "evaluation_results": evaluation_results
+            "evaluation_results": eval_scores
         }, handle, indent=4)
 
 

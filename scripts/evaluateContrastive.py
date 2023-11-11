@@ -82,8 +82,8 @@ def evaluate_model(test_loader, model, device):
 
 
 def main():
-    model_name = "model_168.pt"
-    output_dir = f"../output/contrastiveModel/third/{model_name[:-3]}/"
+    model_name = "model_20.pt"
+    output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
     logger = setupLogger(output_dir+"output.txt")
 
     test_data = TCRContrastiveDataset.load('../output/test_dataset_contrastive.pickle')
@@ -92,7 +92,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = SiameseNetwork(test_data.tensor_size).to(device)
-    model.load_state_dict(torch.load('../output/contrastiveModel/third/'+model_name))
+    model.load_state_dict(torch.load('../output/contrastiveModel/'+model_name))
     model.eval()
 
     labels, distances = evaluate_model(test_loader, model, device)
