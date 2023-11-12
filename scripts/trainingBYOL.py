@@ -55,7 +55,7 @@ def main():
     config = {
         "BatchSize": 4096,
         "Epochs": 24,
-        "LR": 0.001
+        "LR": 0.01
     }
 
     data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')

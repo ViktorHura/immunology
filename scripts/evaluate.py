@@ -8,18 +8,19 @@ import matplotlib.pyplot as plt
 
 from utils import setupLogger, plot_boxplots, plot_histograms, plot_class_histograms,seperateDataByEpitope, get_best_f1
 from data_preprocessing import TCRContrastiveDataset
+from backbones import DenseBackbone
 
-from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model
-#from modelContrastive import SiameseNetwork, evaluate_model
+#from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model
+from modelContrastive import SiameseNetwork, evaluate_model
 
 
 def main():
-    model_name = "model_21.pt"
-    model_path = "../output/byolModel/"+model_name
-    output_dir = f"../output/byolModel/{model_name[:-3]}/"
-    # model_name = "model_20.pt"
-    # model_path = "../output/contrastiveModel/"+model_name
-    # output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
+    # model_name = "model_0.pt"
+    # model_path = "../output/byolModel/"+model_name
+    # output_dir = f"../output/byolModel/{model_name[:-3]}/"
+    model_name = "model_23.pt"
+    model_path = "../output/contrastiveModel/"+model_name
+    output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 
     logger = setupLogger(output_dir+"output.txt")
     test_data = TCRContrastiveDataset.load('../output/test_dataset_contrastive.pickle')
@@ -27,7 +28,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SiameseNetwork(test_data.tensor_size).to(device)
+    model = SiameseNetwork(test_data.tensor_size, DenseBackbone()).to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 

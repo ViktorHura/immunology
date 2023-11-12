@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from backbones import ImRexBackbone
+from backbones import *
 
 
 class SiameseNetworkBYOL(nn.Module):

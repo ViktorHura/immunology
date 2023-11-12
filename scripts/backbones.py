@@ -51,3 +51,15 @@ class DenseBackbone(nn.Module):
 
     def forward(self, input):
         return self.net(input)
+
+
+class EmbeddingBackbone(nn.Module):
+    def __init__(self, num_embeddings):
+        super(EmbeddingBackbone, self).__init__()
+        self.net = nn.Sequential(
+            nn.Flatten(),
+            nn.Embedding(num_embeddings, 128)
+        )
+
+    def forward(self, input):
+        return self.net(input)

@@ -6,6 +6,7 @@ import numpy as np
 from scipy.stats import wasserstein_distance
 
 from utils import plot_losses
+from backbones import DenseBackbone
 from modelContrastive import SiameseNetwork, ContrastiveLoss, evaluate_model
 from data_preprocessing import TCRContrastiveDataset
 
@@ -66,7 +67,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetwork(input_size).to(device)
+    net = SiameseNetwork(input_size, backbone=DenseBackbone()).to(device)
     criterion = ContrastiveLoss()
     optimizer = torch.optim.Adam(net.parameters(), lr=config['LR'])
 
