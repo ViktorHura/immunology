@@ -3,10 +3,10 @@ from torch.utils.data import DataLoader, Subset
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-from evaluateContrastive import evaluate_model
 from scipy.stats import wasserstein_distance
 
-from modelContrastive import SiameseNetwork, ContrastiveLoss
+from utils import plot_losses
+from modelContrastive import SiameseNetwork, ContrastiveLoss, evaluate_model
 from data_preprocessing import TCRContrastiveDataset
 
 
@@ -19,7 +19,9 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
         print(f"Epoch {epoch}")
         for i, data in enumerate(training_loader, 0):
             seq0, seq1, label, _ = data
-            seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float), label.to(device=device)
+            seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device,
+                                                                                   dtype=torch.float), label.to(
+                device=device)
             optimizer.zero_grad()
             output1, output2 = net(seq0, seq1)
             loss_contrastive = criterion(output1, output2, label)
@@ -46,22 +48,11 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     return net, loss, eval_scores
 
 
-def plot_losses(epochs, losses, title="Training loss", xtitle="loss", ytitle="epoch"):
-    x = np.array(range(epochs))
-    y = np.array(losses)
-
-    plt.plot(x, y)
-
-    plt.title(title)
-    plt.ylabel(ytitle)
-    plt.xlabel(xtitle)
-
-
 def main():
     config = {
         "BatchSize": 4096,
         "Epochs": 24,
-	    "LR":0.01
+        "LR": 0.01
     }
 
     data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
@@ -79,7 +70,8 @@ def main():
     criterion = ContrastiveLoss()
     optimizer = torch.optim.Adam(net.parameters(), lr=config['LR'])
 
-    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer, device)
+    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,
+                                       device)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/contrastiveModel/loss.png')

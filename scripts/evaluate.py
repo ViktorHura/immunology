@@ -1,98 +1,34 @@
 import numpy as np
-import os
-import logging
 import torch
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 from sklearn.metrics import precision_recall_curve, confusion_matrix
 from sklearn.metrics import RocCurveDisplay, PrecisionRecallDisplay
 from scipy.stats import wasserstein_distance
 import matplotlib.pyplot as plt
 
-from modelBYOL import SiameseNetworkBYOL
+from utils import setupLogger, plot_boxplots, plot_histograms, plot_class_histograms,seperateDataByEpitope, get_best_f1
 from data_preprocessing import TCRContrastiveDataset
 
-
-def setupLogger(path):
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    logger.addHandler(ch)
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fh = logging.FileHandler(path, mode="w")
-    fh.setLevel(logging.INFO)
-    logger.addHandler(fh)
-    return logger
-
-
-def get_best_f1(recall, precision, thresholds):
-    f1_scores = 2 * recall * precision / (recall + precision)
-    a_max = np.argmax(f1_scores)
-    return np.max(f1_scores), thresholds[a_max], a_max
-
-
-def plot_histograms(distances, sim, dissim, n_bins, title="Distance distributions"):
-    fig, axs = plt.subplots(2, 1, sharex='col', tight_layout=True, figsize=([10, 4.8]))
-    axs[0].hist(sim, bins=n_bins, weights=np.ones(len(sim)) / len(sim))
-    axs[1].hist(dissim, bins=n_bins, weights=np.ones(len(dissim)) / len(dissim))
-
-    fig.suptitle(title)
-    axs[0].set_ylabel("Positive pair")
-    axs[1].set_ylabel("Negative pair")
-    #plt.xticks(np.arange(distances.min(), distances.max(), 0.5))
-    plt.xlabel("Distance")
-
-
-def seperateDataByEpitope(dataset, epitopes, distances):
-    dist_dict = {}
-    for epitope in epitopes:
-        dist_dict[epitope] = ([], [])  # negative and positive pair distances
-
-    for i, p in enumerate(dataset):
-        _, _, typ, epitope_id = p
-        dist_dict[epitopes[epitope_id]][typ].append(distances[i])
-    return dist_dict
-
-
-def plot_class_histograms(dataset, dist_dict, n_bins, output_dir, distances):
-    for epitope in dataset.epitopes:
-        pdist = dist_dict[epitope][1]
-        ndist = dist_dict[epitope][0]
-
-        plot_histograms(np.array(distances), pdist, ndist, n_bins, f"Distance distributions {epitope}")
-        plt.savefig(output_dir + f"{epitope}_dist.png")
-        plt.show()
-
-
-def evaluate_model(test_loader, model, device):
-    labels = []
-    distances = []
-    with torch.no_grad():
-        for i, data in enumerate(test_loader, 0):
-            seqA, seqB, label, _ = data
-            outputA = model.encoder_q(seqA.to(device=device, dtype=torch.float))
-            outputB = model.encoder_q(seqB.to(device=device, dtype=torch.float))
-
-            dist = F.pairwise_distance(outputA,  outputB)
-            labels += label.tolist()
-            distances += dist.tolist()
-    return labels, distances
+from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model
+#from modelContrastive import SiameseNetwork, evaluate_model
 
 
 def main():
     model_name = "model_21.pt"
+    model_path = "../output/byolModel/"+model_name
     output_dir = f"../output/byolModel/{model_name[:-3]}/"
-    logger = setupLogger(output_dir+"output.txt")
+    # model_name = "model_20.pt"
+    # model_path = "../output/contrastiveModel/"+model_name
+    # output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 
+    logger = setupLogger(output_dir+"output.txt")
     test_data = TCRContrastiveDataset.load('../output/test_dataset_contrastive.pickle')
     test_loader = DataLoader(test_data, batch_size=10000, num_workers=6, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SiameseNetworkBYOL(test_data.tensor_size).to(device)
-    model.load_state_dict(torch.load('../output/byolModel/'+model_name))
+    model = SiameseNetwork(test_data.tensor_size).to(device)
+    model.load_state_dict(torch.load(model_path))
     model.eval()
 
     labels, distances = evaluate_model(test_loader, model, device)
@@ -120,9 +56,11 @@ def main():
     logger.info("dissimilar / similar")
     logger.info(conf)
 
-
     similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
     dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
+
+    plot_boxplots(similar_dists, dissim_dists)
+    plt.show()
 
     resWD = wasserstein_distance(similar_dists,dissim_dists)
     logger.info('\n== Wasserstein distances ==')
@@ -138,7 +76,6 @@ def main():
         logger.info(f'{epitope:10} : {score}')
     avg_score /= len(test_data.epitopes)
     logger.info(f'{"Average":10} : {avg_score}')
-
 
     plot_histograms(np.array(distances), similar_dists, dissim_dists, 100)
     plt.savefig(output_dir + "ALL_dist.png")

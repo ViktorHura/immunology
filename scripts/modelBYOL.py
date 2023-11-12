@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from modelContrastive import ImRexBackbone
+
+from backbones import ImRexBackbone
 
 
 class SiameseNetworkBYOL(nn.Module):
@@ -44,12 +45,6 @@ class SiameseNetworkBYOL(nn.Module):
 
 
 class BYOLLoss(nn.Module):
-    """
-    Contrastive loss
-    Takes embeddings of two samples and a target label == 1 if samples are from the same class and label == 0 otherwise
-    https://github.com/adambielski/siamese-triplet/blob/master/losses.py
-    """
-
     def __init__(self):
         super(BYOLLoss, self).__init__()
 
@@ -64,3 +59,18 @@ class BYOLLoss(nn.Module):
 
         loss = loss1 + loss2
         return loss.mean()
+
+
+def evaluate_model(test_loader, model, device):
+    labels = []
+    distances = []
+    with torch.no_grad():
+        for i, data in enumerate(test_loader, 0):
+            seqA, seqB, label, _ = data
+            outputA = model.encoder_q(seqA.to(device=device, dtype=torch.float))
+            outputB = model.encoder_q(seqB.to(device=device, dtype=torch.float))
+
+            dist = F.pairwise_distance(outputA,  outputB)
+            labels += label.tolist()
+            distances += dist.tolist()
+    return labels, distances

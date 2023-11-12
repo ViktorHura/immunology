@@ -1,38 +1,8 @@
 import torch.nn as nn
+import torch
 import torch.nn.functional as F
 
-
-class ImRexBackbone(nn.Module):
-    def __init__(self, input_shape):
-        super(ImRexBackbone, self).__init__()
-        self.cnn = nn.Sequential(
-            nn.Conv2d(input_shape[0], 128, (1, 3), padding="same"),
-            nn.ReLU(inplace=True),
-            nn.LazyBatchNorm2d(),
-
-            nn.Conv2d(128, 64, (1, 3), padding="same"),
-
-            nn.MaxPool2d((1, 2)),
-            nn.Dropout2d(inplace=True),
-            nn.LazyBatchNorm2d(),
-
-            nn.Conv2d(64, 128, (1, 3), padding="same"),
-            nn.LazyBatchNorm2d(),
-
-            nn.Conv2d(128, 64, (1, 3), padding="same"),
-
-            nn.MaxPool2d((1, 2)),
-            nn.Dropout2d(inplace=True),
-            nn.LazyBatchNorm2d(),
-
-            nn.Flatten(),
-
-            nn.LazyLinear(32),
-            nn.ReLU(inplace=True),
-        )
-
-    def forward(self, input):
-        return self.cnn(input)
+from backbones import ImRexBackbone
 
 
 class SiameseNetwork(nn.Module):
@@ -69,3 +39,18 @@ class ContrastiveLoss(nn.Module):
         losses = 0.5 * (target.float() * distances +
                         (1 + -1 * target).float() * F.relu(self.margin - (distances + self.eps).sqrt()).pow(2))
         return losses.mean() if size_average else losses.sum()
+
+
+def evaluate_model(test_loader, model, device):
+    labels = []
+    distances = []
+    with torch.no_grad():
+        for i, data in enumerate(test_loader, 0):
+            seqA, seqB, label, _ = data
+            outputA, outputB = model(seqA.to(device=device, dtype=torch.float),
+                                     seqB.to(device=device, dtype=torch.float))
+
+            dist = F.pairwise_distance(outputA, outputB)
+            labels += label.tolist()
+            distances += dist.tolist()
+    return labels, distances
