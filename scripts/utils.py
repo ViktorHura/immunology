@@ -29,21 +29,17 @@ def setupLogger(path):
     return logger
 
 
-def get_best_f1(recall, precision, thresholds):
-    f1_scores = 2 * recall * precision / (recall + precision)
-    a_max = np.argmax(f1_scores)
-    return np.max(f1_scores), thresholds[a_max], a_max
-
-
-def plot_histograms(distances, sim, dissim, n_bins, title="Distance distributions"):
-    fig, axs = plt.subplots(2, 1, sharex='col', tight_layout=True, figsize=([10, 4.8]))
+def plot_distances(sim, dissim, n_bins, scale, title="Distance distributions"):
+    fig, axs = plt.subplots(3, 1, sharex='col', tight_layout=True, figsize=([20, 9.6]))
+    plt.xlim(scale)
     axs[0].hist(sim, bins=n_bins, weights=np.ones(len(sim)) / len(sim))
     axs[1].hist(dissim, bins=n_bins, weights=np.ones(len(dissim)) / len(dissim))
+    axs[2].boxplot([dissim, sim], vert=False)
+    axs[2].set_yticklabels(["negative", "positive"])
 
-    fig.suptitle(title)
+    fig.suptitle(title, fontsize="xx-large", fontweight="bold")
     axs[0].set_ylabel("Positive pair")
     axs[1].set_ylabel("Negative pair")
-    #plt.xticks(np.arange(distances.min(), distances.max(), 0.5))
     plt.xlabel("Distance")
 
 
@@ -56,22 +52,3 @@ def seperateDataByEpitope(dataset, epitopes, distances):
         _, _, typ, epitope_id = p
         dist_dict[epitopes[epitope_id]][typ].append(distances[i])
     return dist_dict
-
-
-def plot_class_histograms(dataset, dist_dict, n_bins, output_dir, distances):
-    for epitope in dataset.epitopes:
-        pdist = dist_dict[epitope][1]
-        ndist = dist_dict[epitope][0]
-
-        plot_histograms(np.array(distances), pdist, ndist, n_bins, f"Distance distributions {epitope}")
-        plt.savefig(output_dir + f"{epitope}_dist.png")
-        plt.show()
-
-
-def plot_boxplots(sim, dissim, title="Distance distributions"):
-    fig, axs = plt.subplots(1, 1, tight_layout=True, figsize=([10, 4.8]))
-    axs.boxplot([sim, dissim])
-
-    fig.suptitle(title)
-    axs.set_xticklabels(["positive", "negative"])
-    plt.ylabel("Distance")
