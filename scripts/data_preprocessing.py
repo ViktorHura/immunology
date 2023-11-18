@@ -6,12 +6,19 @@ from torch.utils.data import Dataset
 import itertools
 import pickle
 
+import random
+
+random.seed(42)
+
 
 class TCRContrastiveDataset(Dataset):
-    def __init__(self, data_path, AA_keys_path, max_sequence_length):
+    def __init__(self, data_path, AA_keys_path, max_sequence_length, holdout_percentage=None):
         self.aa_keys = pd.read_csv(AA_keys_path, index_col='One Letter')
         self.max_sequence_length = max_sequence_length
         self.pairs = []
+        self.positive_indices = []
+        self.val_balance = holdout_percentage
+        self.validation_indices = []
         self.encoding_dict = {}
         self.epitopes = []
         self.generatePairs(data_path)
@@ -45,18 +52,25 @@ class TCRContrastiveDataset(Dataset):
                 self.encoding_dict[s] = self.encodeSequence(s)
 
             for a, b in itertools.combinations(positives_seqs, 2):
+                if self.val_balance is not None and random.random() < self.val_balance:
+                    self.validation_indices.append(len(self.pairs))
+
+                self.positive_indices.append(len(self.pairs))
                 self.pairs.append((a, b, 1, id))
 
             for a, b in itertools.product(positives_seqs, negative_seqs):
+                if self.val_balance is not None and random.random() < self.val_balance:
+                    self.validation_indices.append(len(self.pairs))
+
                 self.pairs.append((a, b, 0, id))
 
     def __len__(self):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        s1, s2, label, _ = self.pairs[idx]
+        s1, s2, label, typ = self.pairs[idx]
 
-        return self.encoding_dict[s1], self.encoding_dict[s2], label
+        return self.encoding_dict[s1], self.encoding_dict[s2], label, typ
 
     def save(self, path):
         with open(path, 'wb') as handle:
@@ -69,7 +83,7 @@ class TCRContrastiveDataset(Dataset):
 
 
 def main():
-    training_data = TCRContrastiveDataset("../data/training_data/", "../data/AA_keys.csv", 23)
+    training_data = TCRContrastiveDataset("../data/training_data/", "../data/AA_keys.csv", 23, 0.20)
     training_data.save("../output/training_dataset_contrastive.pickle")
 
     test_data = TCRContrastiveDataset("../data/true_set/", "../data/AA_keys.csv", 23)
