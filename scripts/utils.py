@@ -4,7 +4,7 @@ import logging
 import os
 
 
-def plot_losses(epochs, losses, title="Training loss", xtitle="loss", ytitle="epoch"):
+def plot_losses(epochs, losses, title="Training loss", ytitle="loss", xtitle="epoch"):
     x = np.array(range(epochs))
     y = np.array(losses)
 

@@ -1,9 +1,10 @@
 import torch
+import timm.optim
 from torch.utils.data import DataLoader, Subset
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import wasserstein_distance
+from sklearn.metrics import roc_auc_score
 
 from utils import plot_losses
 from backbones import DenseBackbone
@@ -36,10 +37,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
         labels, distances = evaluate_model(validation_loader, net, device)
 
-        similar_dists = [d for i, d in enumerate(distances) if labels[i] == 1]
-        dissim_dists = [d for i, d in enumerate(distances) if labels[i] == 0]
-
-        evalscore = wasserstein_distance(similar_dists, dissim_dists)
+        evalscore = roc_auc_score(labels, np.negative(distances))
 
         print(f"Current eval score {evalscore}\n")
 
@@ -52,8 +50,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 24,
-        "LR": 0.01
+        "Epochs": 48,
     }
 
     data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
@@ -69,7 +66,7 @@ def main():
 
     net = SiameseNetwork(input_size, backbone=DenseBackbone()).to(device)
     criterion = ContrastiveLoss()
-    optimizer = torch.optim.Adam(net.parameters(), lr=config['LR'])
+    optimizer = timm.optim.Lars(net.parameters())
 
     model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,
                                        device)
@@ -78,7 +75,7 @@ def main():
     plt.savefig('../output/contrastiveModel/loss.png')
     plt.show()
 
-    plot_losses(config['Epochs'], eval_scores, title="Evaluation Scores", ytitle="EM distance")
+    plot_losses(config['Epochs'], eval_scores, title="Evaluation Scores", ytitle="ROC AUC")
     plt.savefig('../output/contrastiveModel/eval.png')
     plt.show()
 

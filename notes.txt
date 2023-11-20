@@ -1,3 +1,5 @@
 https://github.com/rwalroth/ProteinCNN/blob/master/seq2mat.py
 
 http://psb.stanford.edu/psb-online/proceedings/psb23/zhang_p.pdf
+
+https://syncedreview.com/2021/10/06/deepmind-podracer-tpu-based-rl-frameworks-deliver-exceptional-performance-at-low-cost-118/
