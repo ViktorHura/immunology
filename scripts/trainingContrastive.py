@@ -64,7 +64,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetwork(input_size, backbone=DenseBackbone()).to(device)
+    net = SiameseNetwork(input_size).to(device)
     criterion = ContrastiveLoss()
     optimizer = timm.optim.Lars(net.parameters())
 
