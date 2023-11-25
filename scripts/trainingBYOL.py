@@ -9,8 +9,7 @@ import numpy as np
 from utils import plot_losses
 from modelBYOL import SiameseNetworkBYOL, BYOLLoss, evaluate_model
 from data_preprocessing import TCRContrastiveDataset
-from backbones import ImRexBackbone, DenseBackbone
-
+from backbones import ImRexBackbone, DenseBackbone, TransformerBackbone, BytenetEncoder
 
 def train(epochs, training_loader, validation_loader, net, criterion, optimizer, device):
     losses = []
@@ -67,20 +66,20 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetworkBYOL(input_size).to(device)
+    net = SiameseNetworkBYOL(input_size, backbone_q=BytenetEncoder(input_size), backbone_k=BytenetEncoder(input_size)).to(device)
     criterion = BYOLLoss()
-    optimizer = timm.optim.Lars(net.parameters())
+    optimizer = timm.optim.AdamW(net.parameters())
 
     model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,
                                        device)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/byolModel/loss.png')
-    plt.show()
+    #plt.show()
 
     plot_losses(config['Epochs'], eval_scores, title="Evaluation Scores", ytitle="ROC AUC")
     plt.savefig('../output/byolModel/eval.png')
-    plt.show()
+    #plt.show()
 
     with open('../output/byolModel/results.json', 'w') as handle:
         json.dump({
