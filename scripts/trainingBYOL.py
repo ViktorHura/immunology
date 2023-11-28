@@ -1,28 +1,58 @@
 import torch
 import timm.optim
 from sklearn.metrics import roc_auc_score
-from torch.utils.data import DataLoader, Subset
+from sklearn.neighbors import NearestNeighbors
+from torch.utils.data import DataLoader, TensorDataset
 import json
 import matplotlib.pyplot as plt
-import numpy as np
+import pandas as pd
 
 from utils import plot_losses
-from modelBYOL import SiameseNetworkBYOL, BYOLLoss, evaluate_model
-from data_preprocessing import TCRContrastiveDataset
-from backbones import ImRexBackbone, DenseBackbone, TransformerBackbone, BytenetEncoder
+from modelBYOL import SiameseNetworkBYOL, BYOLLoss, evaluate_model, encode_data
+from data_preprocessing import TCRDataset, ValDataset
+from backbones import *
+
+
+def classify(encodings, epitopes, reference_data, model, device, K=5):
+    predictions = []
+
+    ref_encodings = TensorDataset(reference_data['sequence'])
+    ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
+    ref_encodings = encode_data(ref_loader, model, device)
+
+    ref_epitopes = reference_data['epitope']
+
+    nn = NearestNeighbors(n_neighbors=K, n_jobs=-1)
+    nn.fit(ref_encodings)
+
+    _, l_indices = nn.kneighbors(encodings)
+
+    for i, epitope in enumerate(epitopes):
+        n_idx = l_indices[i]
+
+        n_epitopes = [ref_epitopes[x] for x in n_idx]
+        matching = n_epitopes.count(epitope)
+
+        predictions.append(matching / len(n_epitopes))
+
+    return predictions
+
 
 def train(epochs, training_loader, validation_loader, net, criterion, optimizer, device):
     losses = []
     eval_scores = []
 
+    reference_data = pd.DataFrame(training_loader.dataset.encoding_dict.values(), columns =['sequence', 'epitope'])
+
     for epoch in range(epochs):
         net.train()
         print(f"Epoch {epoch}")
+        n_batches = len(training_loader)
         for i, data in enumerate(training_loader, 0):
-            seq0, seq1, label, _ = data
-            seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device,
-                                                                                   dtype=torch.float), label.to(
-                device=device)
+            print(f'\rBatch {i}/{n_batches}', end='')
+            seq0, seq1 = data
+            seq0, seq1 = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float),
+
             optimizer.zero_grad()
             p1, z2, p2, z1 = net(seq0, seq1)
 
@@ -31,19 +61,21 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
             optimizer.step()
 
+        print('\r', end='')
         print(f"Current loss {loss.item()}")
         torch.save(net.state_dict(), f'../output/byolModel/model_{epoch}.pt')
 
         net.eval()
 
-        labels, distances = evaluate_model(validation_loader, net, device)
+        encodings, epitopes, labels = evaluate_model(validation_loader, net, device)
+        y_pred = classify(encodings, epitopes, reference_data, net, device)
 
-        evalscore = roc_auc_score(labels, np.negative(distances))
+        evalscore = roc_auc_score(labels, y_pred)
 
         print(f"Current eval score {evalscore}\n")
 
         eval_scores.append(evalscore)
-        losses.append(loss.item())
+        losses.append(loss.detatch().item())
 
     return net, losses, eval_scores
 
@@ -51,35 +83,32 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 64,
+        "Epochs": 1,
     }
 
-    data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
-    input_size = data.tensor_size
+    train_data = TCRDataset.load('../output/train.pickle')
+    validation_data = ValDataset.load('../output/val.pickle')
 
-    validation_data = Subset(data, data.validation_indices)
-    training_data = Subset(data, np.intersect1d(np.setdiff1d(np.arange(len(data)), data.validation_indices),
-                                                data.positive_indices))
+    input_size = train_data.tensor_size
 
-    training_loader = DataLoader(training_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
-    test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
+    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
+    test_loader = DataLoader(validation_data, batch_size=6000, num_workers=6, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetworkBYOL(input_size, backbone_q=BytenetEncoder(input_size), backbone_k=BytenetEncoder(input_size)).to(device)
+    net = SiameseNetworkBYOL(input_size).to(device)
     criterion = BYOLLoss()
-    optimizer = timm.optim.AdamW(net.parameters())
+    optimizer = timm.optim.Lars(net.parameters())
 
-    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,
-                                       device)
+    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,device)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/byolModel/loss.png')
-    #plt.show()
+    plt.show()
 
     plot_losses(config['Epochs'], eval_scores, title="Evaluation Scores", ytitle="ROC AUC")
     plt.savefig('../output/byolModel/eval.png')
-    #plt.show()
+    plt.show()
 
     with open('../output/byolModel/results.json', 'w') as handle:
         json.dump({

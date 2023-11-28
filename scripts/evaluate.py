@@ -6,7 +6,7 @@ from sklearn.metrics import roc_auc_score
 import matplotlib.pyplot as plt
 
 from utils import setupLogger, seperateDataByEpitope, plot_distances
-from data_preprocessing import TCRContrastiveDataset
+from data_preprocessing import TCRDataset
 from backbones import DenseBackbone, TransformerBackbone, BytenetEncoder
 
 from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model
@@ -22,7 +22,7 @@ def main():
     # output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 
     logger = setupLogger(output_dir+"output.txt")
-    test_data = TCRContrastiveDataset.load('../output/test_dataset_contrastive.pickle')
+    test_data = TCRDataset.load('../output/test_dataset_contrastive.pickle')
     test_loader = DataLoader(test_data, batch_size=10000, num_workers=6, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
