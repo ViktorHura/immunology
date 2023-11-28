@@ -75,7 +75,7 @@ def evaluate_model(test_loader, model, device):
 
             labels += label.tolist()
             encodings += output.tolist()
-            epitopes += epitope.tolist()
+            epitopes += list(epitope)
 
     return encodings, epitopes, labels
 

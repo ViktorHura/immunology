@@ -1,0 +1,12 @@
+{
+    "config": {
+        "BatchSize": 4096,
+        "Epochs": 1
+    },
+    "losses": [
+        1.4981901460606268
+    ],
+    "evaluation_results": [
+        0.774451544183121
+    ]
+}

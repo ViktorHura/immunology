@@ -27,28 +27,3 @@ def setupLogger(path):
     fh.setLevel(logging.INFO)
     logger.addHandler(fh)
     return logger
-
-
-def plot_distances(sim, dissim, n_bins, scale, title="Distance distributions"):
-    fig, axs = plt.subplots(3, 1, sharex='col', tight_layout=True, figsize=([20, 9.6]))
-    plt.xlim(scale)
-    axs[0].hist(sim, bins=n_bins, weights=np.ones(len(sim)) / len(sim))
-    axs[1].hist(dissim, bins=n_bins, weights=np.ones(len(dissim)) / len(dissim))
-    axs[2].boxplot([dissim, sim], vert=False)
-    axs[2].set_yticklabels(["negative", "positive"])
-
-    fig.suptitle(title, fontsize="xx-large", fontweight="bold")
-    axs[0].set_ylabel("Positive pair")
-    axs[1].set_ylabel("Negative pair")
-    plt.xlabel("Distance")
-
-
-def seperateDataByEpitope(dataset, epitopes, distances):
-    dist_dict = {}
-    for epitope in epitopes:
-        dist_dict[epitope] = ([], [])  # negative and positive pair distances
-
-    for i, p in enumerate(dataset):
-        _, _, typ, epitope_id = p
-        dist_dict[epitopes[epitope_id]][typ].append(distances[i])
-    return dist_dict

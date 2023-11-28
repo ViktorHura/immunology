@@ -1,11 +1,12 @@
 import torch
 import timm.optim
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, RocCurveDisplay, roc_curve
 from sklearn.neighbors import NearestNeighbors
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 import json
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 
 from utils import plot_losses
 from modelBYOL import SiameseNetworkBYOL, BYOLLoss, evaluate_model, encode_data
@@ -13,20 +14,28 @@ from data_preprocessing import TCRDataset, ValDataset
 from backbones import *
 
 
-def classify(encodings, epitopes, reference_data, model, device, K=5):
+class Refset(Dataset):
+    def __init__(self, list):
+        self.data = list
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+
+def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
     predictions = []
 
-    ref_encodings = TensorDataset(reference_data['sequence'])
-    ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
-    ref_encodings = encode_data(ref_loader, model, device)
-
-    ref_epitopes = reference_data['epitope']
-
+    print(f'\rFitting Nearest Neighbours', end='')
     nn = NearestNeighbors(n_neighbors=K, n_jobs=-1)
     nn.fit(ref_encodings)
 
+    print(f'\rCalculating Nearest Neighbours', end='')
     _, l_indices = nn.kneighbors(encodings)
 
+    print(f'\rParsing predictions', end='')
     for i, epitope in enumerate(epitopes):
         n_idx = l_indices[i]
 
@@ -43,11 +52,15 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     eval_scores = []
 
     reference_data = pd.DataFrame(training_loader.dataset.encoding_dict.values(), columns =['sequence', 'epitope'])
+    print(f'\rLoading reference data', end='')
+    ref_encodings = Refset(list(reference_data['sequence']))
+    ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
 
     for epoch in range(epochs):
         net.train()
         print(f"Epoch {epoch}")
         n_batches = len(training_loader)
+        epoch_loss = 0
         for i, data in enumerate(training_loader, 0):
             print(f'\rBatch {i}/{n_batches}', end='')
             seq0, seq1 = data
@@ -59,23 +72,45 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
             loss = criterion(p1, z2, p2, z1)
             loss.backward()
 
+            epoch_loss += loss.item()
+
             optimizer.step()
 
         print('\r', end='')
-        print(f"Current loss {loss.item()}")
+        epoch_loss /= n_batches
+        print(f"Current loss {epoch_loss}")
         torch.save(net.state_dict(), f'../output/byolModel/model_{epoch}.pt')
 
         net.eval()
 
+        print(f'\rEncoding validation data', end='')
         encodings, epitopes, labels = evaluate_model(validation_loader, net, device)
-        y_pred = classify(encodings, epitopes, reference_data, net, device)
 
-        evalscore = roc_auc_score(labels, y_pred)
+        print(f'\rEncoding reference data', end='')
+        ref_encodings = encode_data(ref_loader, net, device)
+        ref_epitopes = reference_data['epitope']
+
+        print(f'\rClassifying validation data', end='')
+        y_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes)
+        print('\r', end='')
+
+        scores = []
+        results = pd.DataFrame.from_dict({'epitope': epitopes, 'y': labels, 'y_pred': y_pred})
+        grouped_data = dict(tuple(results.groupby("epitope")))
+
+        for epitope in list(grouped_data.keys()):
+            data = grouped_data[epitope]
+            y, y_pred = data['y'], data['y_pred']
+
+            score = roc_auc_score(y, y_pred, max_fpr=0.1)
+            scores.append(score)
+
+        evalscore = np.average(scores)
 
         print(f"Current eval score {evalscore}\n")
 
         eval_scores.append(evalscore)
-        losses.append(loss.detatch().item())
+        losses.append(epoch_loss)
 
     return net, losses, eval_scores
 
@@ -83,7 +118,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 def main():
     config = {
         "BatchSize": 4096,
-        "Epochs": 1,
+        "Epochs": 48,
     }
 
     train_data = TCRDataset.load('../output/train.pickle')
