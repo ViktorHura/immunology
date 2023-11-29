@@ -33,16 +33,20 @@ def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
     nn.fit(ref_encodings)
 
     print(f'\rCalculating Nearest Neighbours', end='')
-    _, l_indices = nn.kneighbors(encodings)
+    l_dist, l_indices = nn.kneighbors(encodings)
 
     print(f'\rParsing predictions', end='')
     for i, epitope in enumerate(epitopes):
         n_idx = l_indices[i]
+        n_dist = l_dist[i]
 
-        n_epitopes = [ref_epitopes[x] for x in n_idx]
-        matching = n_epitopes.count(epitope)
+        mx_dist = max(n_dist)
+        n_dist = [(mx_dist+1 - d)/(mx_dist+1) for d in n_dist]
 
-        predictions.append(matching / len(n_epitopes))
+        matching_dists = [n_dist[i] for i, idx in enumerate(n_idx) if ref_epitopes[idx] == epitope]
+        match_sum = sum(matching_dists)
+
+        predictions.append(match_sum / len(n_dist))
 
     return predictions
 
@@ -55,6 +59,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     print(f'\rLoading reference data', end='')
     ref_encodings = Refset(list(reference_data['sequence']))
     ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
+    print('\r', end='')
 
     for epoch in range(epochs):
         net.train()

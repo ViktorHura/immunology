@@ -1,5 +1,5 @@
 import copy
-
+import os
 import pandas as pd
 import numpy as np
 import torch
@@ -13,6 +13,7 @@ seed = 42
 negatives_per_val_pair = 5
 
 random.seed(seed)
+
 
 class ValDataset(Dataset):
     def __init__(self, encoding_dict, pairs):
@@ -125,23 +126,27 @@ class TCRDataset(Dataset):
 def main():
 
     test_peptides = list(pd.read_csv('../data/test_data/test.csv')['Peptide'].unique())
-    # b = list(pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')['Peptide'].unique())
-    #
-    # print(test_peptides, len(test_peptides))
-    #
-    # print()
-    #
-    # inter = [x for x in b if x in test_peptides]
-    # print(inter, len(inter))
-    #
-    # print()
-    #
-    # notin = [x for x in test_peptides if x not in b]
-    # print(notin, len(notin))
-    #
-    # print()
 
-    training_data = TCRDataset("../data/training_data/VDJdb_paired_chain.csv", test_peptides, "../data/AA_keys.csv", 25, 0.20)
+    t1 = pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')[['Peptide', 'CDR3b_extended']]
+
+    t2 = pd.read_csv('../data/training_data/McPAS-TCR_search.csv')[['Epitope.peptide', 'CDR3.beta.aa']]
+    t2.columns = ['Peptide', 'CDR3b_extended']
+
+    frames = [t1, t2]
+    d_path = '../data/training_data/immrep/'
+    for f in os.listdir(d_path):
+        data = pd.read_csv(d_path + f, sep='\t')
+        data = data.loc[data['Label'] == 1]
+        epitope = f[:-4]
+        data['Peptide'] = epitope
+        data = data[['Peptide', 'TRB_CDR3']]
+        data.columns = ['Peptide', 'CDR3b_extended']
+        frames.append(data)
+
+    training_data = pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
+    training_data.to_csv('../data/training_data/concatenated.csv', index=False)
+    #
+    training_data = TCRDataset("../data/training_data/concatenated.csv", test_peptides, "../data/AA_keys.csv", 25, 0.20)
     training_data.save("../output/train.pickle", "../output/val.pickle")
 
 

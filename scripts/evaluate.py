@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_auc_score
 import matplotlib.pyplot as plt
+import pickle
 
 from utils import setupLogger
 from data_preprocessing import TCRDataset, ValDataset
@@ -42,10 +43,33 @@ def main():
     ref_encodings = encode_data(ref_loader, model, device)
     ref_epitopes = reference_data['epitope']
 
-    val_pred = classify(val_encodings, val_epitopes, ref_encodings, ref_epitopes)
+    best_k = 1
+    best_score = 0
+    for k in range(1, 20):
+        val_pred = classify(val_encodings, val_epitopes, ref_encodings, ref_epitopes, K=k)
+        print('\r', end='')
+
+        results = pd.DataFrame.from_dict({'epitope':val_epitopes, 'y': val_labels, 'y_pred': val_pred})
+        scores = []
+        grouped_data = dict(tuple(results.groupby("epitope")))
+        for epitope in list(grouped_data.keys()):
+            data = grouped_data[epitope]
+            y, y_pred = data['y'], data['y_pred']
+
+            score = roc_auc_score(y, y_pred, max_fpr=0.1)
+            scores.append(score)
+
+        macro_auc = np.average(scores)
+        if macro_auc > best_score:
+            best_score = macro_auc
+            best_k = k
+
+    print(f'best K: {best_k}')
+
+    val_pred = classify(val_encodings, val_epitopes, ref_encodings, ref_epitopes, K=best_k)
     print('\r', end='')
 
-    results = pd.DataFrame.from_dict({'epitope':val_epitopes, 'y': val_labels, 'y_pred': val_pred})
+    results = pd.DataFrame.from_dict({'epitope': val_epitopes, 'y': val_labels, 'y_pred': val_pred})
 
     scores = []
     logger.info('\n== ROC AUC@0.1 Scores ==')
