@@ -14,7 +14,7 @@ from trainingBYOL import Refset, classify, roc_auc_score
 
 
 def main():
-    model_name = "T0/model_13.pt"
+    model_name = "C1/model_0.pt"
     model_path = "../output/byolModel/"+model_name
     output_dir = f"../output/byolModel/{model_name[:-3]}/"
 
@@ -89,11 +89,9 @@ def main():
     macro_auc = np.average(scores)
     logger.info(f'{"Macro Auc@0.1":10} : {macro_auc}')
 
-    scores += [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+    scores += [0.5, 0.5, 0.5, 0.5]
     est_score = np.average(scores)
     logger.info(f'{"Estimated Macro Auc@0.1":10} : {est_score}')
-
-
 
 
 if __name__ == "__main__":

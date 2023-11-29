@@ -59,7 +59,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     print(f'\rLoading reference data', end='')
     ref_encodings = Refset(list(reference_data['sequence']))
     ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
-    print('\r', end='')
+    print('\r'+' '*40, end='\r')
 
     for epoch in range(epochs):
         net.train()
@@ -67,7 +67,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
         n_batches = len(training_loader)
         epoch_loss = 0
         for i, data in enumerate(training_loader, 0):
-            print(f'\rBatch {i}/{n_batches}', end='')
+            #print(f'\rBatch {i}/{n_batches}', end='')
             seq0, seq1 = data
             seq0, seq1 = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float),
 
@@ -81,7 +81,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
             optimizer.step()
 
-        print('\r', end='')
+        #print('\r', end='')
         epoch_loss /= n_batches
         print(f"Current loss {epoch_loss}")
         torch.save(net.state_dict(), f'../output/byolModel/model_{epoch}.pt')
@@ -96,8 +96,30 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
         ref_epitopes = reference_data['epitope']
 
         print(f'\rClassifying validation data', end='')
-        y_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes)
-        print('\r', end='')
+
+        best_k = 1
+        best_score = 0
+        for k in range(1, 20):
+            val_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes, K=k)
+            print('\r' + ' '*40, end='\r')
+
+            results = pd.DataFrame.from_dict({'epitope': epitopes, 'y': labels, 'y_pred': val_pred})
+            scores = []
+            grouped_data = dict(tuple(results.groupby("epitope")))
+            for epitope in list(grouped_data.keys()):
+                data = grouped_data[epitope]
+                y, y_pred = data['y'], data['y_pred']
+
+                score = roc_auc_score(y, y_pred, max_fpr=0.1)
+                scores.append(score)
+            scores.extend([0.5, 0.5, 0.5, 0.5])
+            macro_auc = np.average(scores)
+            if macro_auc > best_score:
+                best_score = macro_auc
+                best_k = k
+
+        y_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes, K=best_k)
+        print('\r' + ' '*40, end='\r')
 
         scores = []
         results = pd.DataFrame.from_dict({'epitope': epitopes, 'y': labels, 'y_pred': y_pred})
@@ -110,6 +132,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
             score = roc_auc_score(y, y_pred, max_fpr=0.1)
             scores.append(score)
 
+        scores.extend([0.5, 0.5, 0.5, 0.5])
         evalscore = np.average(scores)
 
         print(f"Current eval score {evalscore}\n")
@@ -122,8 +145,8 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
 def main():
     config = {
-        "BatchSize": 4096,
-        "Epochs": 48,
+        "BatchSize": 40960,
+        "Epochs": 24,
     }
 
     train_data = TCRDataset.load('../output/train.pickle')
@@ -131,8 +154,8 @@ def main():
 
     input_size = train_data.tensor_size
 
-    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
-    test_loader = DataLoader(validation_data, batch_size=6000, num_workers=6, shuffle=False)
+    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=12)
+    test_loader = DataLoader(validation_data, batch_size=40960, num_workers=12, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
