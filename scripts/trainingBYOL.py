@@ -99,7 +99,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
         best_k = 1
         best_score = 0
-        for k in range(1, 20):
+        for k in range(1, 30):
             val_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes, K=k)
             print('\r' + ' '*40, end='\r')
 
@@ -145,7 +145,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
 def main():
     config = {
-        "BatchSize": 40960,
+        "BatchSize": 4096,
         "Epochs": 24,
     }
 
@@ -155,7 +155,7 @@ def main():
     input_size = train_data.tensor_size
 
     training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=12)
-    test_loader = DataLoader(validation_data, batch_size=40960, num_workers=12, shuffle=False)
+    test_loader = DataLoader(validation_data, batch_size=4096, num_workers=12, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

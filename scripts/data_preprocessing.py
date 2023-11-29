@@ -1,6 +1,7 @@
 import copy
 import os
 import pandas as pd
+pd.options.mode.chained_assignment = None
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -53,13 +54,20 @@ class TCRDataset(Dataset):
         self.generatePairs(data_path, val_peptides)
         self.tensor_size = (self.aa_keys.shape[1], 1, max_sequence_length)
 
-    def encodeSequence(self, sequence):
+    def encodeSequence(self, sequence, seqA):
         mat = np.array([self.aa_keys.loc[aa] for aa in sequence])
         padding = np.zeros((self.max_sequence_length - mat.shape[0], mat.shape[1]))
         mat = np.append(mat, padding, axis=0)
         mat = np.transpose(mat)
-        mat = torch.from_numpy(mat)
-        return torch.reshape(mat, (mat.size(dim=0), 1,  mat.size(dim=1)))
+
+        mat2 = np.array([self.aa_keys.loc[aa] for aa in seqA])
+        padding = np.zeros((self.max_sequence_length - mat2.shape[0], mat2.shape[1]))
+        mat2 = np.append(mat2, padding, axis=0)
+        mat2 = np.transpose(mat2)
+
+        matstack = np.stack([mat, mat2])
+        matstack = torch.from_numpy(matstack)
+        return torch.reshape(matstack, (matstack.size(dim=1), 2,  matstack.size(dim=2)))
 
     def generatePairs(self, data_path, val_peptides):
         all_data = pd.read_csv(data_path)
@@ -70,7 +78,8 @@ class TCRDataset(Dataset):
         self.epitopes = list(grouped_data.keys())
 
         for i, epitope in enumerate(self.epitopes):
-            data = grouped_data[epitope]['CDR3b_extended']
+            data = grouped_data[epitope][['CDR3b_extended', 'CDR3a_extended']]
+            data['CDR3a_extended'].fillna(data['CDR3b_extended'], inplace=True)
             if len(data) < 2:
                 continue
 
@@ -80,10 +89,10 @@ class TCRDataset(Dataset):
             if not valid.empty:
                 val_sequences[epitope] = valid
 
-            for seq in train:
-                self.encoding_dict[seq] = [self.encodeSequence(seq), epitope]
+            for seq, seqA in train.to_records(index=False):
+                self.encoding_dict[seq] = [self.encodeSequence(seq, seqA), epitope]
 
-            for a, b in itertools.combinations(train, 2):
+            for a, b in itertools.combinations(train['CDR3b_extended'], 2):
                 self.pairs.append((a, b))
 
         val_dict = {}
@@ -93,8 +102,8 @@ class TCRDataset(Dataset):
         for epitope in val_epitopes:
             remainder = copy.deepcopy(val_epitopes)
             remainder.remove(epitope)
-            for seq in val_sequences[epitope]:
-                val_dict[seq] = self.encodeSequence(seq)
+            for seq, seqA in val_sequences[epitope].to_records(index=False):
+                val_dict[seq] = self.encodeSequence(seq, seqA)
                 val_pairs.append((seq, epitope, 1))  # positive pair
 
                 for neg_epitope in random.sample(remainder, negatives_per_val_pair):
@@ -127,10 +136,10 @@ def main():
 
     test_peptides = list(pd.read_csv('../data/test_data/test.csv')['Peptide'].unique())
 
-    t1 = pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')[['Peptide', 'CDR3b_extended']]
+    t1 = pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')[['Peptide', 'CDR3b_extended', 'CDR3a_extended']]
 
-    t2 = pd.read_csv('../data/training_data/McPAS-TCR_search.csv')[['Epitope.peptide', 'CDR3.beta.aa']]
-    t2.columns = ['Peptide', 'CDR3b_extended']
+    t2 = pd.read_csv('../data/training_data/McPAS-TCR_search.csv')[['Epitope.peptide', 'CDR3.beta.aa', 'CDR3.alpha.aa']]
+    t2.columns = ['Peptide', 'CDR3b_extended', 'CDR3a_extended']
 
     frames = [t1, t2]
     d_path = '../data/training_data/immrep/'
@@ -139,8 +148,8 @@ def main():
         data = data.loc[data['Label'] == 1]
         epitope = f[:-4]
         data['Peptide'] = epitope
-        data = data[['Peptide', 'TRB_CDR3']]
-        data.columns = ['Peptide', 'CDR3b_extended']
+        data = data[['Peptide', 'TRB_CDR3', 'TRA_CDR3']]
+        data.columns = ['Peptide', 'CDR3b_extended', 'CDR3a_extended']
         frames.append(data)
 
     training_data = pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)

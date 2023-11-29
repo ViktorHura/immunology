@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import RocCurveDisplay
 import matplotlib.pyplot as plt
 import pickle
 
@@ -14,7 +14,7 @@ from trainingBYOL import Refset, classify, roc_auc_score
 
 
 def main():
-    model_name = "C1/model_0.pt"
+    model_name = "C7/model_0.pt"
     model_path = "../output/byolModel/"+model_name
     output_dir = f"../output/byolModel/{model_name[:-3]}/"
 
@@ -25,7 +25,7 @@ def main():
 
     input_size = train_data.tensor_size
 
-    val_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
+    val_loader = DataLoader(validation_data, batch_size=2000, num_workers=4, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -39,7 +39,7 @@ def main():
 
     print(f'\rEncoding reference data', end='')
     ref_encodings = Refset(list(reference_data['sequence']))
-    ref_loader = DataLoader(ref_encodings, batch_size=10000, num_workers=6, shuffle=False)
+    ref_loader = DataLoader(ref_encodings, batch_size=2000, num_workers=4, shuffle=False)
     ref_encodings = encode_data(ref_loader, model, device)
     ref_epitopes = reference_data['epitope']
 
@@ -93,6 +93,8 @@ def main():
     est_score = np.average(scores)
     logger.info(f'{"Estimated Macro Auc@0.1":10} : {est_score}')
 
+    RocCurveDisplay.from_predictions(val_labels, val_pred, plot_chance_level=True).plot()
+    plt.show()
 
 if __name__ == "__main__":
     main()
