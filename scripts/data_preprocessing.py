@@ -16,6 +16,45 @@ negatives_per_val_pair = 5
 random.seed(seed)
 
 
+class TestDataset(Dataset):
+    def __init__(self, sequences, AA_keys_path, max_sequence_length):
+        self.aa_keys = pd.read_csv(AA_keys_path, index_col='One Letter')
+        self.pairs = []
+        self.max_sequence_length = max_sequence_length
+        for seq, seqA in sequences.to_records(index=False):
+            self.pairs.append(self.encodeSequence(seq, seqA))
+
+    def encodeSequence(self, sequence, seqA):
+        mat = np.array([self.aa_keys.loc[aa] for aa in sequence])
+        padding = np.zeros((self.max_sequence_length - mat.shape[0], mat.shape[1]))
+        mat = np.append(mat, padding, axis=0)
+        mat = np.transpose(mat)
+
+        mat2 = np.array([self.aa_keys.loc[aa] for aa in seqA])
+        padding = np.zeros((self.max_sequence_length - mat2.shape[0], mat2.shape[1]))
+        mat2 = np.append(mat2, padding, axis=0)
+        mat2 = np.transpose(mat2)
+
+        matstack = np.stack([mat, mat2])
+        matstack = torch.from_numpy(matstack)
+        return torch.reshape(matstack, (matstack.size(dim=1), 2,  matstack.size(dim=2)))
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        return self.pairs[idx]
+
+    def save(self, path):
+        with open(path, 'wb') as handle:
+            pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @classmethod
+    def load(cls, path):
+        with open(path, 'rb') as handle:
+            return pickle.load(handle)
+
+
 class ValDataset(Dataset):
     def __init__(self, encoding_dict, pairs):
         self.encoding_dict = encoding_dict
@@ -54,6 +93,7 @@ class TCRDataset(Dataset):
         self.generatePairs(data_path, val_peptides)
         self.tensor_size = (self.aa_keys.shape[1], 1, max_sequence_length)
 
+
     def encodeSequence(self, sequence, seqA):
         mat = np.array([self.aa_keys.loc[aa] for aa in sequence])
         padding = np.zeros((self.max_sequence_length - mat.shape[0], mat.shape[1]))
@@ -83,7 +123,10 @@ class TCRDataset(Dataset):
             if len(data) < 2:
                 continue
 
-            train = data.sample(frac=1-self.val_balance, random_state=seed)
+            if self.val_balance:
+                train = data.sample(frac=1-self.val_balance, random_state=seed)
+            else:
+                train = data
 
             valid = data.drop(train.index)
             if not valid.empty:
@@ -95,21 +138,22 @@ class TCRDataset(Dataset):
             for a, b in itertools.combinations(train['CDR3b_extended'], 2):
                 self.pairs.append((a, b))
 
-        val_dict = {}
-        val_pairs = []
+        if self.val_balance:
+            val_dict = {}
+            val_pairs = []
 
-        val_epitopes = [e for e in self.epitopes if e in val_peptides]
-        for epitope in val_epitopes:
-            remainder = copy.deepcopy(val_epitopes)
-            remainder.remove(epitope)
-            for seq, seqA in val_sequences[epitope].to_records(index=False):
-                val_dict[seq] = self.encodeSequence(seq, seqA)
-                val_pairs.append((seq, epitope, 1))  # positive pair
+            val_epitopes = [e for e in self.epitopes if e in val_peptides]
+            for epitope in val_epitopes:
+                remainder = copy.deepcopy(val_epitopes)
+                remainder.remove(epitope)
+                for seq, seqA in val_sequences[epitope].to_records(index=False):
+                    val_dict[seq] = self.encodeSequence(seq, seqA)
+                    val_pairs.append((seq, epitope, 1))  # positive pair
 
-                for neg_epitope in random.sample(remainder, negatives_per_val_pair):
-                    val_pairs.append((seq, neg_epitope, 0))  # negative pair
+                    for neg_epitope in random.sample(remainder, negatives_per_val_pair):
+                        val_pairs.append((seq, neg_epitope, 0))  # negative pair
 
-        self.val_dataset = ValDataset(val_dict, val_pairs)
+            self.val_dataset = ValDataset(val_dict, val_pairs)
 
     def __len__(self):
         return len(self.pairs)
@@ -142,7 +186,7 @@ def main():
     t2.columns = ['Peptide', 'CDR3b_extended', 'CDR3a_extended']
 
     frames = [t1, t2]
-    d_path = '../data/training_data/immrep/'
+    d_path = '../data/training_data/immrep22/'
     for f in os.listdir(d_path):
         data = pd.read_csv(d_path + f, sep='\t')
         data = data.loc[data['Label'] == 1]

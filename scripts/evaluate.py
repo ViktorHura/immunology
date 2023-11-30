@@ -7,14 +7,14 @@ import matplotlib.pyplot as plt
 import pickle
 
 from utils import setupLogger
-from data_preprocessing import TCRDataset, ValDataset
+from data_preprocessing import TCRDataset, ValDataset, TestDataset
 
 from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model, encode_data
 from trainingBYOL import Refset, classify, roc_auc_score
 
 
 def main():
-    model_name = "C7/model_0.pt"
+    model_name = "C8/model_1.pt"
     model_path = "../output/byolModel/"+model_name
     output_dir = f"../output/byolModel/{model_name[:-3]}/"
 
@@ -95,6 +95,28 @@ def main():
 
     RocCurveDisplay.from_predictions(val_labels, val_pred, plot_chance_level=True).plot()
     plt.show()
+
+    test_data = pd.read_csv('../data/test_data/test.csv')
+    test_peptides = list(test_data['Peptide'].unique())
+    full_reference_data = TCRDataset("../data/training_data/concatenated.csv", test_peptides, "../data/AA_keys.csv", 25, None)
+
+    reference_data = pd.DataFrame(full_reference_data.encoding_dict.values(), columns=['sequence', 'epitope'])
+    ref_encodings = Refset(list(reference_data['sequence']))
+    ref_loader = DataLoader(ref_encodings, batch_size=2000, num_workers=4, shuffle=False)
+    ref_encodings = encode_data(ref_loader, model, device)
+    ref_epitopes = reference_data['epitope']
+
+    test_set = TestDataset(test_data[['CDR3b_extended', 'CDR3a_extended']], "../data/AA_keys.csv", 25)
+    test_loader = DataLoader(test_set, batch_size=2000, num_workers=4, shuffle=False)
+    test_encodings = encode_data(test_loader, model, device)
+    test_epitopes = test_data['Peptide']
+
+    predictions = classify(test_encodings, test_epitopes, ref_encodings, ref_epitopes, K=best_k)
+
+    test_data['Prediction'] = predictions
+
+    test_data.to_csv("../output/submission.csv", index=False)
+
 
 if __name__ == "__main__":
     main()
