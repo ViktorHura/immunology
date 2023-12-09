@@ -11,7 +11,7 @@ import pickle
 import random
 
 seed = 42
-negatives_per_val_pair = 5
+negatives_per_pos_pair = 5
 
 random.seed(seed)
 
@@ -101,6 +101,7 @@ class TCRDataset(Dataset):
         grouped_data = dict(tuple(all_data.groupby("Peptide")))
 
         val_sequences = {}
+        train_sequences = {}
 
         self.epitopes = list(grouped_data.keys())
 
@@ -115,6 +116,8 @@ class TCRDataset(Dataset):
             else:
                 train = data
 
+            train_sequences[epitope] = train
+
             valid = data.drop(train.index)
             if not valid.empty:
                 val_sequences[epitope] = valid
@@ -123,7 +126,23 @@ class TCRDataset(Dataset):
                 self.encoding_dict[seq] = [encodeSequence(seq, seqA, self.aa_keys, self.max_sequence_length), epitope]
 
             for a, b in itertools.combinations(train['CDR3b_extended'], 2):
-                self.pairs.append((a, b))
+                self.pairs.append((a, b, 1)) # positive pair
+
+        for epitope in list(train_sequences.keys()):
+            rem = []
+            for epitope2 in list(train_sequences.keys()):
+                if epitope2 is epitope:
+                    continue
+                rem.append(train_sequences[epitope2]['CDR3b_extended'])
+
+            a = train_sequences[epitope]['CDR3b_extended'].to_frame()
+            b = pd.concat(rem, ignore_index=True).drop_duplicates().reset_index(drop=True).to_frame()
+
+            c = a.merge(b, how='cross')
+            c['label'] = 0
+            d = c.sample(n=1250, random_state=seed).to_records(index=False)
+
+            self.pairs.extend(d)
 
         if self.val_balance:
             val_dict = {}
@@ -137,7 +156,7 @@ class TCRDataset(Dataset):
                     val_dict[seq] = encodeSequence(seq, seqA, self.aa_keys, self.max_sequence_length)
                     val_pairs.append((seq, epitope, 1))  # positive pair
 
-                    for neg_epitope in random.sample(remainder, negatives_per_val_pair):
+                    for neg_epitope in random.sample(remainder, negatives_per_pos_pair):
                         val_pairs.append((seq, neg_epitope, 0))  # negative pair
 
             self.val_dataset = ValDataset(val_dict, val_pairs)
@@ -146,9 +165,9 @@ class TCRDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        s1, s2 = self.pairs[idx]
+        s1, s2, label = self.pairs[idx]
 
-        return self.encoding_dict[s1][0], self.encoding_dict[s2][0]
+        return self.encoding_dict[s1][0], self.encoding_dict[s2][0], label
 
     def save(self, train_path, val_path):
         if self.val_dataset:

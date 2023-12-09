@@ -4,19 +4,18 @@ import torch
 from torch.utils.data import DataLoader
 from sklearn.metrics import RocCurveDisplay
 import matplotlib.pyplot as plt
-import pickle
 
 from utils import setupLogger
-from data_preprocessing import TCRDataset, ValDataset, TestDataset
+from data_preprocessing import TCRDataset, ValDataset, TestDataset, Refset
 
-from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model, encode_data
-from trainingBYOL import Refset, classify, roc_auc_score
+from modelContrastive import SiameseNetworkContrastive as SiameseNetwork, evaluate_model, encode_data
+from trainingContrastive import classify, roc_auc_score
 
 
 def main():
-    model_name = "C8/model_1.pt"
-    model_path = "../output/byolModel/"+model_name
-    output_dir = f"../output/byolModel/{model_name[:-3]}/"
+    model_name = "model_0.pt"
+    model_path = "../output/contrastiveModel/"+model_name
+    output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 
     logger = setupLogger(output_dir+"output.txt")
 
