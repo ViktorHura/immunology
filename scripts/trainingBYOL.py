@@ -10,19 +10,11 @@ import numpy as np
 
 from utils import plot_losses
 from modelBYOL import SiameseNetworkBYOL, BYOLLoss, evaluate_model, encode_data
-from data_preprocessing import TCRDataset, ValDataset
+from data_preprocessing import TCRDataset, ValDataset, Refset
 from backbones import *
 
 
-class Refset(Dataset):
-    def __init__(self, list):
-        self.data = list
 
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
 
 
 def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
