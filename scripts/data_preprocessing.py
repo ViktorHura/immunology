@@ -112,7 +112,7 @@ class TCRDataset(Dataset):
                 continue
 
             if self.val_balance:
-                train = data.sample(frac=1-self.val_balance, random_state=seed)
+                train = data.sample(frac=1 - self.val_balance, random_state=seed)
             else:
                 train = data
 
@@ -126,23 +126,42 @@ class TCRDataset(Dataset):
                 self.encoding_dict[seq] = [encodeSequence(seq, seqA, self.aa_keys, self.max_sequence_length), epitope]
 
             for a, b in itertools.combinations(train['CDR3b_extended'], 2):
-                self.pairs.append((a, b, 1)) # positive pair
+                self.pairs.append((a, b, 1))  # positive pair
 
+        print(len(self.pairs))
+
+        rem = []
         for epitope in list(train_sequences.keys()):
-            rem = []
-            for epitope2 in list(train_sequences.keys()):
-                if epitope2 is epitope:
-                    continue
-                rem.append(train_sequences[epitope2]['CDR3b_extended'])
+            idk = train_sequences[epitope]['CDR3b_extended'].to_frame()
+            idk['epitope'] = epitope
+            rem.append(idk)
 
-            a = train_sequences[epitope]['CDR3b_extended'].to_frame()
-            b = pd.concat(rem, ignore_index=True).drop_duplicates().reset_index(drop=True).to_frame()
+        full = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True)
+        fullmix = full.merge(full, how='cross')
+        n = (len(self.pairs) * negatives_per_pos_pair)
+        q = fullmix.query("(epitope_x != epitope_y) and (CDR3b_extended_x > CDR3b_extended_y)").sample(n=n,
+                                                                                                       random_state=seed)
+        d = q[['CDR3b_extended_x', 'CDR3b_extended_y']]
+        d['label'] = 0
+        self.pairs.extend(d.to_records(index=False))
 
-            c = a.merge(b, how='cross')
-            c['label'] = 0
-            d = c.sample(n=1250, random_state=seed).to_records(index=False)
+        # for epitope in list(train_sequences.keys()):
+        #     rem = []
+        #     for epitope2 in list(train_sequences.keys()):
+        #         if epitope2 is epitope:
+        #             continue
+        #         rem.append(train_sequences[epitope2]['CDR3b_extended'].copy())
 
-            self.pairs.extend(d)
+        #     a = train_sequences[epitope]['CDR3b_extended'].to_frame()
+        #     b = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True).to_frame()
+
+        #     c = a.merge(b, how='cross')
+        #     c['label'] = 0
+        #     d = c.sample(n=25000, random_state=seed, replace=True).drop_duplicates().to_records(index=False)
+
+        #     self.pairs.extend(d)
+
+        print(len(self.pairs))
 
         if self.val_balance:
             val_dict = {}
@@ -183,7 +202,6 @@ class TCRDataset(Dataset):
 
 
 def main():
-
     test_peptides = list(pd.read_csv('../data/test_data/test.csv')['Peptide'].unique())
 
     t1 = pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')[['Peptide', 'CDR3b_extended', 'CDR3a_extended']]
@@ -204,7 +222,7 @@ def main():
 
     training_data = pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
     training_data.to_csv('../data/training_data/concatenated.csv', index=False)
-    #
+
     training_data = TCRDataset("../data/training_data/concatenated.csv", test_peptides, "../data/AA_keys.csv", 25, 0.20)
     training_data.save("../output/train.pickle", "../output/val.pickle")
 

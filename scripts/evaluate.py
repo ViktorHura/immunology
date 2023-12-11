@@ -13,7 +13,7 @@ from trainingContrastive import classify, roc_auc_score
 
 
 def main():
-    model_name = "model_0.pt"
+    model_name = "ct1/model_ct1.pt"
     model_path = "../output/contrastiveModel/"+model_name
     output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 

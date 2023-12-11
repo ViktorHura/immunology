@@ -14,6 +14,8 @@ from data_preprocessing import TCRDataset, ValDataset, Refset
 from backbones import *
 
 
+workers = 32
+
 def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
     predictions = []
 
@@ -47,7 +49,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     reference_data = pd.DataFrame(training_loader.dataset.encoding_dict.values(), columns =['sequence', 'epitope'])
     print(f'\rLoading reference data', end='')
     ref_encodings = Refset(list(reference_data['sequence']))
-    ref_loader = DataLoader(ref_encodings, batch_size=4096, num_workers=6, shuffle=False)
+    ref_loader = DataLoader(ref_encodings, batch_size=16384, num_workers=workers, shuffle=False)
     print('\r'+' '*40, end='\r')
 
     for epoch in range(epochs):
@@ -56,7 +58,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
         n_batches = len(training_loader)
         epoch_loss = 0
         for i, data in enumerate(training_loader, 0):
-            #print(f'\rBatch {i}/{n_batches}', end='')
+            print(f'\rBatch {i}/{n_batches}', end='')
             seq0, seq1, label = data
             seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float), label.to(device=device)
 
@@ -70,7 +72,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
             optimizer.step()
 
-        #print('\r', end='')
+        print('\r', end='')
         epoch_loss /= n_batches
         print(f"Current loss {epoch_loss}")
         torch.save(net.state_dict(), f'../output/contrastiveModel/model_{epoch}.pt')
@@ -134,8 +136,8 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
 def main():
     config = {
-        "BatchSize": 2048,
-        "Epochs": 1,
+        "BatchSize": 32768,
+        "Epochs": 12,
     }
 
     train_data = TCRDataset.load('../output/train.pickle')
@@ -143,14 +145,14 @@ def main():
 
     input_size = train_data.tensor_size
 
-    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
-    test_loader = DataLoader(validation_data, batch_size=4096, num_workers=6, shuffle=False)
+    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=workers)
+    test_loader = DataLoader(validation_data, batch_size=16384, num_workers=workers, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     net = SiameseNetworkContrastive(input_size).to(device)
     criterion = ContrastiveLoss()
-    optimizer = timm.optim.Lars(net.parameters())
+    optimizer = timm.optim.Lars(net.parameters(), lr=0.1)
 
     model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,device)
 
