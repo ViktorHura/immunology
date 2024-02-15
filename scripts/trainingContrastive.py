@@ -1,75 +1,160 @@
 import torch
 import timm.optim
-from torch.utils.data import DataLoader, Subset
+from sklearn.metrics import roc_auc_score, RocCurveDisplay, roc_curve
+from sklearn.neighbors import NearestNeighbors
+from torch.utils.data import DataLoader, Dataset
 import json
 import matplotlib.pyplot as plt
+import pandas as pd
 import numpy as np
-from sklearn.metrics import roc_auc_score
 
 from utils import plot_losses
-from backbones import DenseBackbone
-from modelContrastive import SiameseNetwork, ContrastiveLoss, evaluate_model
-from data_preprocessing import TCRContrastiveDataset
+from modelContrastive import SiameseNetworkContrastive, ContrastiveLoss, evaluate_model, encode_data
+from data_preprocessingContrastive import TCRDataset, ValDataset, Refset
+from backbones import *
+
+
+workers = 32
+
+def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
+    predictions = []
+
+    print(f'\rFitting Nearest Neighbours', end='')
+    nn = NearestNeighbors(n_neighbors=K, n_jobs=-1)
+    nn.fit(ref_encodings)
+
+    print(f'\rCalculating Nearest Neighbours', end='')
+    l_dist, l_indices = nn.kneighbors(encodings)
+
+    print(f'\rParsing predictions', end='')
+    for i, epitope in enumerate(epitopes):
+        n_idx = l_indices[i]
+        n_dist = l_dist[i]
+
+        mx_dist = max(n_dist)
+        n_dist = [(mx_dist+1 - d)/(mx_dist+1) for d in n_dist]
+
+        matching_dists = [n_dist[i] for i, idx in enumerate(n_idx) if ref_epitopes[idx] == epitope]
+        match_sum = sum(matching_dists)
+
+        predictions.append(match_sum / len(n_dist))
+
+    return predictions
 
 
 def train(epochs, training_loader, validation_loader, net, criterion, optimizer, device):
-    loss = []
+    losses = []
     eval_scores = []
+
+    reference_data = pd.DataFrame(training_loader.dataset.encoding_dict.values(), columns =['sequence', 'epitope'])
+    print(f'\rLoading reference data', end='')
+    ref_encodings = Refset(list(reference_data['sequence']))
+    ref_loader = DataLoader(ref_encodings, batch_size=16384, num_workers=workers, shuffle=False)
+    print('\r'+' '*40, end='\r')
 
     for epoch in range(epochs):
         net.train()
         print(f"Epoch {epoch}")
+        n_batches = len(training_loader)
+        epoch_loss = 0
         for i, data in enumerate(training_loader, 0):
-            seq0, seq1, label, _ = data
-            seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device,
-                                                                                   dtype=torch.float), label.to(
-                device=device)
+            print(f'\rBatch {i}/{n_batches}', end='')
+            seq0, seq1, label = data
+            seq0, seq1, label = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float), label.to(device=device)
+
             optimizer.zero_grad()
             output1, output2 = net(seq0, seq1)
-            loss_contrastive = criterion(output1, output2, label)
-            loss_contrastive.backward()
+
+            loss = criterion(output1, output2, label)
+            loss.backward()
+
+            epoch_loss += loss.item()
+
             optimizer.step()
 
-        print(f"Current loss {loss_contrastive.item()}")
+        print('\r', end='')
+        epoch_loss /= n_batches
+        print(f"Current loss {epoch_loss}")
         torch.save(net.state_dict(), f'../output/contrastiveModel/model_{epoch}.pt')
 
         net.eval()
 
-        labels, distances = evaluate_model(validation_loader, net, device)
+        print(f'\rEncoding validation data', end='')
+        encodings, epitopes, labels = evaluate_model(validation_loader, net, device)
 
-        evalscore = roc_auc_score(labels, np.negative(distances))
+        print(f'\rEncoding reference data', end='')
+        ref_encodings = encode_data(ref_loader, net, device)
+        ref_epitopes = reference_data['epitope']
+
+        print(f'\rClassifying validation data', end='')
+
+        best_k = 1
+        best_score = 0
+        for k in range(1, 30):
+            val_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes, K=k)
+            print('\r' + ' '*40, end='\r')
+
+            results = pd.DataFrame.from_dict({'epitope': epitopes, 'y': labels, 'y_pred': val_pred})
+            scores = []
+            grouped_data = dict(tuple(results.groupby("epitope")))
+            for epitope in list(grouped_data.keys()):
+                data = grouped_data[epitope]
+                y, y_pred = data['y'], data['y_pred']
+
+                score = roc_auc_score(y, y_pred, max_fpr=0.1)
+                scores.append(score)
+            scores.extend([0.5, 0.5, 0.5, 0.5])
+            macro_auc = np.average(scores)
+            if macro_auc > best_score:
+                best_score = macro_auc
+                best_k = k
+
+        y_pred = classify(encodings, epitopes, ref_encodings, ref_epitopes, K=best_k)
+        print('\r' + ' '*40, end='\r')
+
+        scores = []
+        results = pd.DataFrame.from_dict({'epitope': epitopes, 'y': labels, 'y_pred': y_pred})
+        grouped_data = dict(tuple(results.groupby("epitope")))
+
+        for epitope in list(grouped_data.keys()):
+            data = grouped_data[epitope]
+            y, y_pred = data['y'], data['y_pred']
+
+            score = roc_auc_score(y, y_pred, max_fpr=0.1)
+            scores.append(score)
+
+        scores.extend([0.5, 0.5, 0.5, 0.5])
+        evalscore = np.average(scores)
 
         print(f"Current eval score {evalscore}\n")
 
         eval_scores.append(evalscore)
-        loss.append(loss_contrastive.item())
+        losses.append(epoch_loss)
 
-    return net, loss, eval_scores
+    return net, losses, eval_scores
 
 
 def main():
     config = {
-        "BatchSize": 4096,
-        "Epochs": 48,
+        "BatchSize": 32768,
+        "Epochs": 12,
     }
 
-    data = TCRContrastiveDataset.load('../output/training_dataset_contrastive.pickle')
-    input_size = data.tensor_size
+    train_data = TCRDataset.load('../output/trainContrastive.pickle')
+    validation_data = ValDataset.load('../output/valContrastive.pickle')
 
-    validation_data = Subset(data, data.validation_indices)
-    training_data = Subset(data, np.setdiff1d(np.arange(len(data)), data.validation_indices))
+    input_size = train_data.tensor_size
 
-    training_loader = DataLoader(training_data, batch_size=config['BatchSize'], shuffle=True, num_workers=6)
-    test_loader = DataLoader(validation_data, batch_size=10000, num_workers=6, shuffle=False)
+    training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=workers)
+    test_loader = DataLoader(validation_data, batch_size=16384, num_workers=workers, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetwork(input_size).to(device)
+    net = SiameseNetworkContrastive(input_size).to(device)
     criterion = ContrastiveLoss()
-    optimizer = timm.optim.Lars(net.parameters())
+    optimizer = timm.optim.Lars(net.parameters(), lr=0.1)
 
-    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,
-                                       device)
+    model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,device)
 
     plot_losses(config['Epochs'], losses)
     plt.savefig('../output/contrastiveModel/loss.png')

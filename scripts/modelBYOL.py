@@ -63,14 +63,30 @@ class BYOLLoss(nn.Module):
 
 def evaluate_model(test_loader, model, device):
     labels = []
-    distances = []
+    epitopes = []
+    encodings = []
+
     with torch.no_grad():
         for i, data in enumerate(test_loader, 0):
-            seqA, seqB, label, _ = data
-            outputA = model.encoder_q(seqA.to(device=device, dtype=torch.float))
-            outputB = model.encoder_q(seqB.to(device=device, dtype=torch.float))
+            seq, epitope, label = data
+            output = model.encoder_q(seq.to(device=device, dtype=torch.float))
 
-            dist = F.pairwise_distance(outputA,  outputB)
+            output = output.to("cpu")
+
             labels += label.tolist()
-            distances += dist.tolist()
-    return labels, distances
+            encodings += output.tolist()
+            epitopes += list(epitope)
+
+    return encodings, epitopes, labels
+
+
+def encode_data(data_loader, model, device):
+    encodings = []
+    with torch.no_grad():
+        for i, seq in enumerate(data_loader, 0):
+            output = model.encoder_q(seq.to(device=device, dtype=torch.float))
+
+            output = output.to("cpu")
+            encodings += output.tolist()
+
+    return encodings

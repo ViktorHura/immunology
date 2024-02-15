@@ -1,16 +1,16 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 from backbones import *
 
 
-class SiameseNetwork(nn.Module):
+class SiameseNetworkContrastive(nn.Module):
     def __init__(self, input_shape, backbone=None):
-        super(SiameseNetwork, self).__init__()
+        super(SiameseNetworkContrastive, self).__init__()
         if backbone is None:
             backbone = ImRexBackbone(input_shape)
-        # Setting up CNN Layers
+            # Setting up CNN Layers
         self.backbone = backbone
 
     def forward(self, input1, input2):
@@ -43,14 +43,30 @@ class ContrastiveLoss(nn.Module):
 
 def evaluate_model(test_loader, model, device):
     labels = []
-    distances = []
+    epitopes = []
+    encodings = []
+
     with torch.no_grad():
         for i, data in enumerate(test_loader, 0):
-            seqA, seqB, label, _ = data
-            outputA, outputB = model(seqA.to(device=device, dtype=torch.float),
-                                     seqB.to(device=device, dtype=torch.float))
+            seq, epitope, label = data
+            output = model.backbone(seq.to(device=device, dtype=torch.float))
 
-            dist = F.pairwise_distance(outputA, outputB)
+            output = output.to("cpu")
+
             labels += label.tolist()
-            distances += dist.tolist()
-    return labels, distances
+            encodings += output.tolist()
+            epitopes += list(epitope)
+
+    return encodings, epitopes, labels
+
+
+def encode_data(data_loader, model, device):
+    encodings = []
+    with torch.no_grad():
+        for i, seq in enumerate(data_loader, 0):
+            output = model.backbone(seq.to(device=device, dtype=torch.float))
+
+            output = output.to("cpu")
+            encodings += output.tolist()
+
+    return encodings
