@@ -59,7 +59,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
         n_batches = len(training_loader)
         epoch_loss = 0
         for i, data in enumerate(training_loader, 0):
-            #print(f'\rBatch {i}/{n_batches}', end='')
+            print(f'\rBatch {i}/{n_batches}', end='')
             seq0, seq1 = data
             seq0, seq1 = seq0.to(device=device, dtype=torch.float), seq1.to(device=device, dtype=torch.float),
 
@@ -73,7 +73,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
             optimizer.step()
 
-        #print('\r', end='')
+        print('\r', end='')
         epoch_loss /= n_batches
         print(f"Current loss {epoch_loss}")
         torch.save(net.state_dict(), f'../output/byolModel/model_{epoch}.pt')
