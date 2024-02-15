@@ -27,9 +27,9 @@ def encodeSequence(sequence, seqA, aa_keys, max_sequence_length):
     mat2 = np.append(mat2, padding, axis=0)
     mat2 = np.transpose(mat2)
 
-    matstack = np.stack([mat, mat2])
+    matstack = np.concatenate([mat, mat2])
     matstack = torch.from_numpy(matstack)
-    return torch.reshape(matstack, (matstack.size(dim=1), 2, matstack.size(dim=2)))
+    return matstack
 
 
 class Refset(Dataset):
@@ -94,7 +94,7 @@ class TCRDataset(Dataset):
         self.epitopes = []
 
         self.generatePairs(data_path, val_peptides)
-        self.tensor_size = (self.aa_keys.shape[1], 1, max_sequence_length)
+        self.tensor_size = (self.aa_keys.shape[1]*2, max_sequence_length)
 
     def generatePairs(self, data_path, val_peptides):
         all_data = pd.read_csv(data_path)

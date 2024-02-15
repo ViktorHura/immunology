@@ -35,7 +35,7 @@ class ImRexBackbone(nn.Module):
 
     def forward(self, input):
         return self.cnn(input)
-    
+
 ######################################
 
 
@@ -136,13 +136,13 @@ class BytenetEncoder(nn.Module):
     """
     def __init__(self, input_shape, d=128, max_r=16, k=3, num_sets=6):
         super(BytenetEncoder, self).__init__()
-        self.pad = not (input_shape[0] % 2 == 0)
+        #self.pad = not (input_shape[0] % 2 == 0)
         self.d = d
         self.max_r = max_r
         self.k = k
         self.num_sets = num_sets
         self.pad_in = nn.ConstantPad1d((0, 1), 0.)
-        self.conv_in = nn.Conv1d(input_shape[2], 2*d, 1)
+        self.conv_in = nn.Conv1d(input_shape[0], 2*d, 1)
         self.sets = nn.Sequential()
         for i in range(num_sets):
             self.sets.add_module("set_{}".format(i+1), ResBlockSet(d, max_r, k))
@@ -155,10 +155,11 @@ class BytenetEncoder(nn.Module):
         )
 
     def forward(self, input):
-        x = torch.squeeze(input, len(input.shape) - 2)
-        if self.pad:
-            x = nn.functional.pad(x, (0, 0, 0, 1), "constant", 0)
-        x = torch.transpose(x, len(x.shape) - 1, len(x.shape) - 2)
+        # x = torch.squeeze(input, len(input.shape) - 2)
+        # if self.pad:
+        #     x = nn.functional.pad(x, (0, 0, 0, 1), "constant", 0)
+        # x = torch.transpose(x, len(x.shape) - 1, len(x.shape) - 2)
+        x = input
         x = self.conv_in(x)
         x = self.sets(x)
         x = self.conv_out(x)

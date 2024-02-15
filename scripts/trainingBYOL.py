@@ -137,8 +137,8 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
 def main():
     config = {
-        "BatchSize": 4096,
-        "Epochs": 24,
+        "BatchSize": 128,
+        "Epochs": 1,
     }
 
     train_data = TCRDataset.load('../output/trainBYOL.pickle')
@@ -151,7 +151,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetworkBYOL(input_size).to(device)
+    net = SiameseNetworkBYOL(input_size, backbone_q=BytenetEncoder(input_size), backbone_k=BytenetEncoder(input_size)).to(device)
     criterion = BYOLLoss()
     optimizer = timm.optim.Lars(net.parameters())
 
