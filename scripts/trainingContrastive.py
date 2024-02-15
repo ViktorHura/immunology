@@ -10,7 +10,7 @@ import numpy as np
 
 from utils import plot_losses
 from modelContrastive import SiameseNetworkContrastive, ContrastiveLoss, evaluate_model, encode_data
-from data_preprocessing import TCRDataset, ValDataset, Refset
+from data_preprocessingContrastive import TCRDataset, ValDataset, Refset
 from backbones import *
 
 
@@ -140,8 +140,8 @@ def main():
         "Epochs": 12,
     }
 
-    train_data = TCRDataset.load('../output/train.pickle')
-    validation_data = ValDataset.load('../output/val.pickle')
+    train_data = TCRDataset.load('../output/trainContrastive.pickle')
+    validation_data = ValDataset.load('../output/valContrastive.pickle')
 
     input_size = train_data.tensor_size
 
