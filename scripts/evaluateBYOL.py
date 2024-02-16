@@ -11,10 +11,10 @@ from data_preprocessingBYOL import TCRDataset, ValDataset, TestDataset
 
 from modelBYOL import SiameseNetworkBYOL as SiameseNetwork, evaluate_model, encode_data
 from trainingBYOL import Refset, classify, roc_auc_score
-
+from backbones import *
 
 def main():
-    model_name = "C8/model_1.pt"
+    model_name = "model_13.pt"
     model_path = "../output/byolModel/"+model_name
     output_dir = f"../output/byolModel/{model_name[:-3]}/"
 
@@ -29,7 +29,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SiameseNetwork(input_size).to(device)
+    model = SiameseNetwork(input_size, backbone_q=BytenetEncoder(input_size), backbone_k=BytenetEncoder(input_size)).to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 

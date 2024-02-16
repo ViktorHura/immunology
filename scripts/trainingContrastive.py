@@ -14,7 +14,7 @@ from data_preprocessingContrastive import TCRDataset, ValDataset, Refset
 from backbones import *
 
 
-workers = 32
+workers = 16
 
 def classify(encodings, epitopes, ref_encodings, ref_epitopes, K=5):
     predictions = []
@@ -49,7 +49,7 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
     reference_data = pd.DataFrame(training_loader.dataset.encoding_dict.values(), columns =['sequence', 'epitope'])
     print(f'\rLoading reference data', end='')
     ref_encodings = Refset(list(reference_data['sequence']))
-    ref_loader = DataLoader(ref_encodings, batch_size=16384, num_workers=workers, shuffle=False)
+    ref_loader = DataLoader(ref_encodings, batch_size=4096, num_workers=workers, shuffle=False)
     print('\r'+' '*40, end='\r')
 
     for epoch in range(epochs):
@@ -136,8 +136,8 @@ def train(epochs, training_loader, validation_loader, net, criterion, optimizer,
 
 def main():
     config = {
-        "BatchSize": 32768,
-        "Epochs": 12,
+        "BatchSize": 2048,
+        "Epochs": 24,
     }
 
     train_data = TCRDataset.load('../output/trainContrastive.pickle')
@@ -146,13 +146,13 @@ def main():
     input_size = train_data.tensor_size
 
     training_loader = DataLoader(train_data, batch_size=config['BatchSize'], shuffle=True, num_workers=workers)
-    test_loader = DataLoader(validation_data, batch_size=16384, num_workers=workers, shuffle=False)
+    test_loader = DataLoader(validation_data, batch_size=4096, num_workers=workers, shuffle=False)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    net = SiameseNetworkContrastive(input_size).to(device)
+    net = SiameseNetworkContrastive(input_size, backbone=BytenetEncoder(input_size)).to(device)
     criterion = ContrastiveLoss()
-    optimizer = timm.optim.Lars(net.parameters(), lr=0.1)
+    optimizer = timm.optim.AdamW(net.parameters())
 
     model, losses, eval_scores = train(config['Epochs'], training_loader, test_loader, net, criterion, optimizer,device)
 

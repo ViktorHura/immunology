@@ -10,10 +10,10 @@ from data_preprocessingContrastive import TCRDataset, ValDataset, TestDataset, R
 
 from modelContrastive import SiameseNetworkContrastive as SiameseNetwork, evaluate_model, encode_data
 from trainingContrastive import classify, roc_auc_score
-
+from backbones import *
 
 def main():
-    model_name = "ct2/model_ct2.pt"
+    model_name = "model_0.pt"
     model_path = "../output/contrastiveModel/"+model_name
     output_dir = f"../output/contrastiveModel/{model_name[:-3]}/"
 
@@ -28,7 +28,7 @@ def main():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SiameseNetwork(input_size).to(device)
+    model = SiameseNetwork(input_size, backbone=BytenetEncoder(input_size)).to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 
