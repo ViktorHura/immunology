@@ -132,28 +132,16 @@ class TCRDataset(Dataset):
 
         print(len(self.pairs))
 
-        #full = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True)
+        full = pd.concat(rem, ignore_index=True, copy=False).drop_duplicates().reset_index(drop=True)
         del rem
-
-        neg_pairs = []
-
-        for j, (s1, s2, _) in enumerate(self.pairs):
-            if j % 1000 == 0:
-                print(f'\r{j}/{len(self.pairs)}', end='')
-            # epitope = self.encoding_dict[s1][1]
-            #
-            # l1 = int(negatives_per_pos_pair // 2)
-            # l2 = negatives_per_pos_pair - l1
-            #
-            # s = full[full.epitope != epitope].sample(n=negatives_per_pos_pair, random_state=seed)['CDR3b_extended'].to_frame()
-            # l = [s1]*l1 + [s2]*l2
-            # s['seq2'] = l
-
-            neg_pairs.extend([(0,0,0)]*5)
-
-        print('\n', end='')
-        self.pairs.extend(neg_pairs)
-        print(f'Negative pairs generated {len(neg_pairs)}')
+        fullmix = full.merge(full, how='cross')
+        n = (len(self.pairs) * negatives_per_pos_pair)
+        q = fullmix.query("(epitope_x != epitope_y) and (CDR3b_extended_x > CDR3b_extended_y)").sample(n=n,
+                                                                                                       random_state=seed)
+        d = q[['CDR3b_extended_x', 'CDR3b_extended_y']]
+        d['label'] = 0
+        print(f'Negative pairs generated {len(d.index)}')
+        self.pairs.extend(d.to_records(index=False))
 
         if self.val_balance:
             val_dict = {}
