@@ -82,7 +82,7 @@ class ValDataset(Dataset):
 
 
 class TCRDataset(Dataset):
-    def __init__(self, data_path, val_peptides, AA_keys_path, max_sequence_length, holdout_percentage=None):
+    def __init__(self, data_path, AA_keys_path, max_sequence_length, holdout_percentage=None):
         self.aa_keys = pd.read_csv(AA_keys_path, index_col='One Letter')
         self.max_sequence_length = max_sequence_length
         self.pairs = []
@@ -93,15 +93,15 @@ class TCRDataset(Dataset):
         self.encoding_dict = {}
         self.epitopes = []
 
-        self.generatePairs(data_path, val_peptides)
+        self.generatePairs(data_path)
         self.tensor_size = (self.aa_keys.shape[1], 1, max_sequence_length)
 
-    def generatePairs(self, data_path, val_peptides):
+    def generatePairs(self, data_path):
         all_data = pd.read_csv(data_path)
         grouped_data = dict(tuple(all_data.groupby("Peptide")))
 
         val_sequences = {}
-        train_sequences = {}
+        rem = []
 
         self.epitopes = list(grouped_data.keys())
 
@@ -116,7 +116,9 @@ class TCRDataset(Dataset):
             else:
                 train = data
 
-            train_sequences[epitope] = train
+            tmp = train['CDR3b_extended'].to_frame()
+            tmp['epitope'] = epitope
+            rem.append(tmp)
 
             valid = data.drop(train.index)
             if not valid.empty:
@@ -130,45 +132,35 @@ class TCRDataset(Dataset):
 
         print(len(self.pairs))
 
-        rem = []
-        for epitope in list(train_sequences.keys()):
-            idk = train_sequences[epitope]['CDR3b_extended'].to_frame()
-            idk['epitope'] = epitope
-            rem.append(idk)
+        #full = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True)
+        del rem
 
-        full = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True)
-        fullmix = full.merge(full, how='cross')
-        n = (len(self.pairs) * negatives_per_pos_pair)
-        q = fullmix.query("(epitope_x != epitope_y) and (CDR3b_extended_x > CDR3b_extended_y)").sample(n=n,
-                                                                                                       random_state=seed)
-        d = q[['CDR3b_extended_x', 'CDR3b_extended_y']]
-        d['label'] = 0
-        self.pairs.extend(d.to_records(index=False))
+        neg_pairs = []
 
-        # for epitope in list(train_sequences.keys()):
-        #     rem = []
-        #     for epitope2 in list(train_sequences.keys()):
-        #         if epitope2 is epitope:
-        #             continue
-        #         rem.append(train_sequences[epitope2]['CDR3b_extended'].copy())
+        for j, (s1, s2, _) in enumerate(self.pairs):
+            if j % 1000 == 0:
+                print(f'\r{j}/{len(self.pairs)}', end='')
+            # epitope = self.encoding_dict[s1][1]
+            #
+            # l1 = int(negatives_per_pos_pair // 2)
+            # l2 = negatives_per_pos_pair - l1
+            #
+            # s = full[full.epitope != epitope].sample(n=negatives_per_pos_pair, random_state=seed)['CDR3b_extended'].to_frame()
+            # l = [s1]*l1 + [s2]*l2
+            # s['seq2'] = l
 
-        #     a = train_sequences[epitope]['CDR3b_extended'].to_frame()
-        #     b = pd.concat(rem, ignore_index=True, copy=True).drop_duplicates().reset_index(drop=True).to_frame()
+            neg_pairs.extend([(0,0,0)]*5)
 
-        #     c = a.merge(b, how='cross')
-        #     c['label'] = 0
-        #     d = c.sample(n=25000, random_state=seed, replace=True).drop_duplicates().to_records(index=False)
-
-        #     self.pairs.extend(d)
-
-        print(len(self.pairs))
+        print('\n', end='')
+        self.pairs.extend(neg_pairs)
+        print(f'Negative pairs generated {len(neg_pairs)}')
 
         if self.val_balance:
             val_dict = {}
             val_pairs = []
 
-            val_epitopes = [e for e in self.epitopes if e in val_peptides]
-            for epitope in val_epitopes:
+            val_epitopes = list(val_sequences.keys())
+            for epitope in val_sequences:
                 remainder = copy.deepcopy(val_epitopes)
                 remainder.remove(epitope)
                 for seq, seqA in val_sequences[epitope].to_records(index=False):
@@ -201,29 +193,47 @@ class TCRDataset(Dataset):
             return pickle.load(handle)
 
 
+def parse_vdjdb(filename, q=0):
+    """
+    Parse files in the VDJdb format.
+    q-score defines the quality of the database entry (3 > 2 > 1 > 0).
+    """
+    vdjdb = pd.read_csv(filename, sep='\t',low_memory=False)
+    vdjdb = vdjdb[vdjdb['species']=='HomoSapiens']
+    vdjdb = vdjdb[['cdr3.alpha', 'v.alpha',
+                   'cdr3.beta', 'v.beta',
+                   'vdjdb.score', 'meta.subject.id', 'antigen.epitope']]
+    vdjdb = vdjdb[vdjdb['vdjdb.score'] >= q]  # Quality score cut-off
+    vdjdb = vdjdb[~vdjdb['v.alpha'].str.contains("/", na=False)]  # Remove ambiguous entries
+    vdjdb = vdjdb[~vdjdb['v.beta'].str.contains("/", na=False)]  # Remove ambiguous entries
+    vdjdb.drop(columns=['vdjdb.score'], inplace=True)
+    vdjdb.rename(columns={'meta.subject.id':'subject'}, inplace=True)
+    vdjdb = vdjdb[vdjdb['subject'].astype(bool)]
+    vdjdb = vdjdb[~vdjdb.subject.str.contains('mouse', na=False)]
+    vdjdb['count'] = [1] * len(vdjdb)
+    vdjdb.drop_duplicates(inplace=True)
+
+    paired = vdjdb[['antigen.epitope', 'cdr3.beta', 'cdr3.alpha']].dropna().drop_duplicates()
+    paired.rename(columns={'cdr3.alpha': 'CDR3a_extended',
+                           'cdr3.beta': 'CDR3b_extended',
+                           'antigen.epitope': 'Peptide'},
+                  inplace=True)
+
+    return paired
+
+
 def main():
-    test_peptides = list(pd.read_csv('../data/test_data/test.csv')['Peptide'].unique())
+    data = parse_vdjdb('../data/vdjdb_full.txt')
+    data.drop_duplicates(subset='CDR3b_extended', inplace=True)
+    print(f'Usable samples: {len(data.index)}')
 
-    t1 = pd.read_csv('../data/training_data/VDJdb_paired_chain.csv')[['Peptide', 'CDR3b_extended', 'CDR3a_extended']]
+    train_data = data.sample(frac=0.5, random_state=seed)
+    test_data = data.drop(train_data.index)
 
-    t2 = pd.read_csv('../data/training_data/McPAS-TCR_search.csv')[['Epitope.peptide', 'CDR3.beta.aa', 'CDR3.alpha.aa']]
-    t2.columns = ['Peptide', 'CDR3b_extended', 'CDR3a_extended']
+    train_data.to_csv('../data/training_data/concatenated.csv', index=False)
+    test_data.to_csv('../data/test_data/test.csv', index=False)
 
-    frames = [t1, t2]
-    d_path = '../data/training_data/immrep22/'
-    for f in os.listdir(d_path):
-        data = pd.read_csv(d_path + f, sep='\t')
-        data = data.loc[data['Label'] == 1]
-        epitope = f[:-4]
-        data['Peptide'] = epitope
-        data = data[['Peptide', 'TRB_CDR3', 'TRA_CDR3']]
-        data.columns = ['Peptide', 'CDR3b_extended', 'CDR3a_extended']
-        frames.append(data)
-
-    training_data = pd.concat(frames, ignore_index=True).drop_duplicates().reset_index(drop=True)
-    training_data.to_csv('../data/training_data/concatenated.csv', index=False)
-
-    training_data = TCRDataset("../data/training_data/concatenated.csv", test_peptides, "../data/AA_keys.csv", 25, 0.20)
+    training_data = TCRDataset("../data/training_data/concatenated.csv", "../data/AA_keys.csv", 26, 0.10)
     training_data.save("../output/trainContrastive.pickle", "../output/valContrastive.pickle")
 
 
