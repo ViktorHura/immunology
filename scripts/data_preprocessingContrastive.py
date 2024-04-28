@@ -11,7 +11,7 @@ import pickle
 import random
 
 seed = 42
-negatives_per_pos_pair = 5
+negatives_per_pos_pair = 1
 
 random.seed(seed)
 
@@ -136,8 +136,8 @@ class TCRDataset(Dataset):
         del rem
         fullmix = full.merge(full, how='cross')
         n = (len(self.pairs) * negatives_per_pos_pair)
-        q = fullmix.query("(epitope_x != epitope_y) and (CDR3b_extended_x > CDR3b_extended_y)").sample(n=n,
-                                                                                                       random_state=seed)
+        q = fullmix.query("(epitope_x != epitope_y) and (CDR3b_extended_x > CDR3b_extended_y)")
+        #q = q.sample(n=n, random_state=seed)
         d = q[['CDR3b_extended_x', 'CDR3b_extended_y']]
         d['label'] = 0
         print(f'Negative pairs generated {len(d.index)}')
