@@ -215,8 +215,29 @@ def main():
     data.drop_duplicates(subset='CDR3b_extended', inplace=True)
     print(f'Usable samples: {len(data.index)}')
 
-    train_data = data.sample(frac=0.5, random_state=seed)
-    test_data = data.drop(train_data.index)
+    # split by samples
+    # train_data = data.sample(frac=0.5, random_state=seed)
+    # test_data = data.drop(train_data.index)
+
+    # split by epitopes
+    groups = dict(tuple(data.groupby("Peptide")))
+    usable_epitopes = []
+    for epitope, samples in groups.items():
+        l = len(samples.index)
+        if l > 50:
+            usable_epitopes.append((epitope, l))
+
+    usable_epitopes.sort(key=lambda e: e[1], reverse=True)
+    usable_epitopes.pop(0)
+    # new_data = pd.concat([groups[e] for e in usable_epitopes], ignore_index=True).drop_duplicates().reset_index(drop=True)
+    # print(f'Usable samples: {len(new_data.index)}')
+    train_epitopes = usable_epitopes[::2]
+    test_epitopes = usable_epitopes[1::2]
+
+    train_data = pd.concat([groups[e[0]] for e in train_epitopes], ignore_index=True)
+    test_data = pd.concat([groups[e[0]] for e in test_epitopes], ignore_index=True)
+
+    print(f'Train samples: {len(train_data.index)}, Test samples: {len(test_data.index)}')
 
     train_data.to_csv('../data/training_data/concatenated.csv', index=False)
     test_data.to_csv('../data/test_data/test.csv', index=False)
